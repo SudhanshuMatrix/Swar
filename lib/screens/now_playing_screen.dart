@@ -328,8 +328,8 @@ class NowPlayingScreen extends StatelessWidget {
                   ),
                   IconButton(
                     icon: Icon(
-                      player.repeat == RepeatMode.one ? Icons.repeat_one : Icons.repeat,
-                      color: player.repeat == RepeatMode.off ? Colors.grey : SonivoColors.accent,
+                      player.repeat == PlaybackRepeatMode.one ? Icons.repeat_one : Icons.repeat,
+                      color: player.repeat == PlaybackRepeatMode.off ? Colors.grey : SonivoColors.accent,
                     ),
                     tooltip: 'Repeat',
                     onPressed: player.cycleRepeat,

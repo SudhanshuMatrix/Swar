@@ -24,7 +24,7 @@ Future<void> main() async {
         androidNotificationChannelId: 'com.sonivo.audio',
         androidNotificationChannelName: 'Sonivo playback',
         androidNotificationOngoing: true,
-        androidStopForegroundOnPause: false,
+        androidStopForegroundOnPause: true,
       ),
     );
   } catch (_) {

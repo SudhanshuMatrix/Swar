@@ -11,7 +11,7 @@ import '../services/library_service.dart';
 
 enum PlaybackMode { audio, video }
 
-enum RepeatMode { off, all, one }
+enum PlaybackRepeatMode { off, all, one }
 
 /// Owns the queue and drives playback.
 ///
@@ -57,7 +57,7 @@ class PlayerProvider extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   bool _shuffle = false;
-  RepeatMode _repeat = RepeatMode.off;
+  PlaybackRepeatMode _repeat = PlaybackRepeatMode.off;
   bool _autoPlayRelated = true;
   double _volume = 1.0;
   String? _errorMessage;
@@ -73,7 +73,7 @@ class PlayerProvider extends ChangeNotifier {
   Duration get position => _position;
   Duration get duration => _duration;
   bool get shuffle => _shuffle;
-  RepeatMode get repeat => _repeat;
+  PlaybackRepeatMode get repeat => _repeat;
   bool get autoPlayRelated => _autoPlayRelated;
   double get volume => _volume;
   String? get errorMessage => _errorMessage;
@@ -289,7 +289,7 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   void cycleRepeat() {
-    _repeat = RepeatMode.values[(_repeat.index + 1) % RepeatMode.values.length];
+    _repeat = PlaybackRepeatMode.values[(_repeat.index + 1) % PlaybackRepeatMode.values.length];
     notifyListeners();
   }
 
@@ -304,7 +304,7 @@ class PlayerProvider extends ChangeNotifier {
     } else {
       final atEnd = _queueIndex + 1 >= _queue.length;
       if (atEnd) {
-        if (_repeat == RepeatMode.all) {
+        if (_repeat == PlaybackRepeatMode.all) {
           _queueIndex = 0;
         } else if (_autoPlayRelated && currentTrack != null) {
           try {
@@ -340,7 +340,7 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> _onTrackFinished() async {
-    if (_repeat == RepeatMode.one) {
+    if (_repeat == PlaybackRepeatMode.one) {
       await seek(Duration.zero);
       await audioHandler.play();
       return;

@@ -15,10 +15,9 @@ class PlaylistScreen extends StatelessWidget {
   const PlaylistScreen({
     super.key,
     required this.title,
-    this.initialTracks,
-    this.playlistId,
     List<Track>? tracks,
-  }) : initialTracks = tracks ?? initialTracks;
+    this.playlistId,
+  }) : initialTracks = tracks;
 
   String _formatTotalDuration(List<Track> tracks) {
     final totalSeconds = tracks.fold<int>(0, (sum, t) => sum + t.duration.inSeconds);
