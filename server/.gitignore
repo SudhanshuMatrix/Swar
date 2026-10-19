@@ -1,0 +1,18 @@
+# Build output
+/bin/
+# Local database and WAL files
+/data/
+*.db
+*.db-shm
+*.db-wal
+# Secrets
+.env
+.env.*
+!.env.example
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+# Test artifacts
+*.out
+coverage.*
