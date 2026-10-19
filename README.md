@@ -61,9 +61,9 @@ Sonivo streams audio and video directly from CDN endpoints, giving you ad-free m
 
 ### 1. Prerequisites
 
-- **Go**: 1.22+ ([Download Go](https://go.dev/dl/))
+- **Go**: 1.24+ ([Download Go](https://go.dev/dl/))
 - **Flutter**: 3.19+ ([Download Flutter](https://docs.flutter.dev/get-started/install))
-- **Python 3 & yt-dlp**:
+- **Python 3 & yt-dlp** (only for Deep Search):
   ```bash
   pip install -U yt-dlp
   ```
@@ -80,14 +80,18 @@ From the repository root:
 make backend
 
 # Or directly with Go:
-cd backend
-go run .
+cd server
+go run ./cmd/server
 ```
 
-The backend starts at `http://127.0.0.1:8765`. It automatically detects `yt-dlp` in your system `PATH`, Python user scripts directory, or via `python -m yt_dlp`.
+The backend is the Swar Go server in `server/` (catalog from Saavn, Deep Search through yt-dlp, radio, library, offline downloads and Swar Jam). It starts at `http://127.0.0.1:8765`.
+
+Song playback needs `SAAVN_MEDIA_URLS_ENABLED=true`; it is off by default because turning it on is the server operator's decision about streaming rights. See `server/docs/DECISIONS.md` and `server/.env.example`.
 
 You can test that the backend is running by opening:
-`http://127.0.0.1:8765/health` or `http://127.0.0.1:8765/search?q=coldplay`
+`http://127.0.0.1:8765/healthz` or `http://127.0.0.1:8765/search?q=kesariya`
+
+Full API: `server/docs/API.md`. Moving from the old backend: `server/docs/MIGRATION.md`.
 
 ---
 

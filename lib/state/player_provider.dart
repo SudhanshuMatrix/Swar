@@ -7,6 +7,8 @@ import 'package:video_player/video_player.dart';
 import '../models/track.dart';
 import '../services/api_service.dart';
 import '../services/audio_handler.dart';
+import '../services/download_service.dart';
+import '../services/jam_service.dart';
 import '../services/library_service.dart';
 
 enum PlaybackMode { audio, video }
@@ -25,6 +27,12 @@ enum PlaybackRepeatMode { off, all, one }
 class PlayerProvider extends ChangeNotifier {
   final ApiService api;
   final SonivoAudioHandler audioHandler;
+
+  /// When set, fully downloaded tracks play from disk instead of streaming.
+  DownloadService? downloads;
+
+  /// When set and in a Jam, the local player follows the shared state.
+  JamController? jam;
 
   PlayerProvider({required this.api, required this.audioHandler}) {
     audioHandler.onSkipToNext = next;
@@ -61,6 +69,8 @@ class PlayerProvider extends ChangeNotifier {
   bool _autoPlayRelated = true;
   double _volume = 1.0;
   String? _errorMessage;
+  String? _radioStationId;
+  String? _radioLabel;
 
   VideoPlayerController? _videoController;
 
@@ -77,6 +87,9 @@ class PlayerProvider extends ChangeNotifier {
   bool get autoPlayRelated => _autoPlayRelated;
   double get volume => _volume;
   String? get errorMessage => _errorMessage;
+
+  /// Label of the radio station feeding the queue, if any.
+  String? get radioLabel => _radioLabel;
   VideoPlayerController? get videoController => _videoController;
 
   void toggleAutoPlayRelated() {
@@ -90,7 +103,11 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> playQueue(List<Track> tracks, int startIndex) async {
+  Future<void> playQueue(List<Track> tracks, int startIndex, {bool keepRadio = false}) async {
+    if (!keepRadio) {
+      _radioStationId = null;
+      _radioLabel = null;
+    }
     _queue = List.of(tracks);
     _queueIndex = startIndex;
     await _loadCurrent(autoplay: true);
@@ -188,9 +205,15 @@ class PlayerProvider extends ChangeNotifier {
     _position = Duration.zero;
     notifyListeners();
     try {
-      final stream = await api.resolveAudio(track.id);
-      await audioHandler.loadUrl(stream.url, _mediaItem(stream.track));
+      final local = downloads?.localFileFor(track.id);
+      if (local != null) {
+        await audioHandler.loadUrl(Uri.file(local).toString(), _mediaItem(track));
+      } else {
+        final stream = await api.resolveAudio(track.id);
+        await audioHandler.loadUrl(stream.url, _mediaItem(stream.track));
+      }
       if (autoplay) await audioHandler.play();
+      _prefetchUpcoming();
       if (_mode == PlaybackMode.video) {
         await _attachVideoLayer(track.id, resumeAt: Duration.zero, autoplay: autoplay);
       }
@@ -293,6 +316,54 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Asks the server to resolve the next one or two tracks ahead of time
+  /// so skipping is instant. Downloaded tracks need no prefetch.
+  void _prefetchUpcoming() {
+    final upcoming = <String>[];
+    for (var i = _queueIndex + 1; i < _queue.length && upcoming.length < 2; i++) {
+      final id = _queue[i].id;
+      if (downloads?.localFileFor(id) == null) upcoming.add(id);
+    }
+    api.prefetch(upcoming).catchError((_) {});
+  }
+
+  /// Starts a radio station seeded by [track] and plays it.
+  Future<void> startRadio(Track track, {String kind = 'song'}) async {
+    _errorMessage = null;
+    _loading = true;
+    notifyListeners();
+    try {
+      final station = await api.startRadio(kind, track.id);
+      final tracks = [track, ...station.tracks.where((t) => t.id != track.id)];
+      await playQueue(tracks, 0, keepRadio: true);
+      _radioStationId = station.id;
+      _radioLabel = station.label;
+    } catch (e) {
+      _errorMessage = 'Could not start radio: $e';
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Follows the Jam's shared track and play state.
+  Future<void> syncToJam(JamController j) async {
+    final shared = j.nowPlaying;
+    if (shared == null) {
+      if (_playing) await audioHandler.pause();
+      return;
+    }
+    if (currentTrack?.id != shared.id) {
+      await playQueue([shared], 0);
+    }
+    final drift = (j.position - _position).abs();
+    if (drift > const Duration(seconds: 2)) {
+      await seek(j.position);
+    }
+    if (j.playing && !_playing) await audioHandler.play();
+    if (!j.playing && _playing) await audioHandler.pause();
+  }
+
   Future<void> next() async {
     if (_queue.isEmpty) return;
     if (_shuffle && _queue.length > 1) {
@@ -308,7 +379,9 @@ class PlayerProvider extends ChangeNotifier {
           _queueIndex = 0;
         } else if (_autoPlayRelated && currentTrack != null) {
           try {
-            final related = await api.getRelated(currentTrack!.id);
+            final related = _radioStationId != null
+                ? await api.radioNext(_radioStationId!)
+                : await api.getRelated(currentTrack!.id);
             final existingIds = _queue.map((t) => t.id).toSet();
             final newTracks = related.where((t) => !existingIds.contains(t.id)).toList();
             if (newTracks.isNotEmpty) {
@@ -340,6 +413,12 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> _onTrackFinished() async {
+    final j = jam;
+    if (j != null && j.inJam) {
+      // In a Jam the server decides what plays next.
+      j.reportTrackEnded();
+      return;
+    }
     if (_repeat == PlaybackRepeatMode.one) {
       await seek(Duration.zero);
       await audioHandler.play();

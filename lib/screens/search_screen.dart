@@ -4,9 +4,12 @@ import 'package:provider/provider.dart';
 import '../core/theme.dart';
 import '../models/track.dart';
 import '../services/api_service.dart';
+import '../services/download_service.dart';
+import '../services/jam_service.dart';
 import '../state/library_provider.dart';
 import '../state/player_provider.dart';
 import '../widgets/track_tile.dart';
+import 'deep_search_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -19,6 +22,7 @@ class _SearchScreenState extends State<SearchScreen> {
   final _controller = TextEditingController();
   List<Track> _results = [];
   bool _loading = false;
+  bool _searched = false;
   String? _error;
 
   static const _genres = [
@@ -56,7 +60,10 @@ class _SearchScreenState extends State<SearchScreen> {
       final api = context.read<ApiService>();
       final results = await api.search(trimmed);
       if (!mounted) return;
-      setState(() => _results = results);
+      setState(() {
+        _results = results;
+        _searched = true;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = 'Search failed. Make sure the Sonivo backend is running ($e)');
@@ -100,6 +107,22 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
+  void _openDeepSearch() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => DeepSearchScreen(query: _controller.text.trim()),
+    ));
+  }
+
+  Future<void> _download(Track t) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await context.read<DownloadService>().download(t);
+      messenger.showSnackBar(SnackBar(content: Text('Downloading "${t.title}"')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
   void _selectGenre(String genre) {
     _controller.text = genre;
     _search(genre);
@@ -121,7 +144,7 @@ class _SearchScreenState extends State<SearchScreen> {
               onSubmitted: _search,
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
-                hintText: 'Search songs, artists, or paste a YouTube URL',
+                hintText: 'Search songs, artists or albums',
                 hintStyle: const TextStyle(color: SonivoColors.textSecondary, fontSize: 14),
                 prefixIcon: const Icon(Icons.search, color: Colors.white70),
                 filled: true,
@@ -135,6 +158,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           _controller.clear();
                           setState(() {
                             _results = [];
+                            _searched = false;
                             _error = null;
                           });
                         },
@@ -168,6 +192,13 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
               ),
             ),
+          if (_searched && _results.isEmpty && !_loading)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text('No results for "${_controller.text.trim()}".',
+                  style: const TextStyle(color: SonivoColors.textSecondary)),
+            ),
+          if (_searched && !_loading) _DeepSearchPrompt(onTap: _openDeepSearch),
           Expanded(
             child: _results.isEmpty && !_loading
                 ? _buildBrowseGenres()
@@ -175,6 +206,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     itemCount: _results.length,
                     itemBuilder: (context, i) {
                       final t = _results[i];
+                      final jam = context.read<JamController>();
                       final isLiked = library.isLiked(t.id);
                       return TrackTile(
                         track: t,
@@ -186,12 +218,19 @@ class _SearchScreenState extends State<SearchScreen> {
                             if (value == 'queue') player.addToQueue(t);
                             if (value == 'like') library.toggleLiked(t);
                             if (value == 'playlist') _addToPlaylistDialog(t);
+                            if (value == 'radio') player.startRadio(t);
+                            if (value == 'download') _download(t);
+                            if (value == 'jam') jam.addTrack(t);
                           },
                           itemBuilder: (_) => [
                             const PopupMenuItem(value: 'play_next', child: Text('Play next')),
                             const PopupMenuItem(value: 'queue', child: Text('Add to queue')),
                             const PopupMenuItem(value: 'playlist', child: Text('Add to playlist')),
                             PopupMenuItem(value: 'like', child: Text(isLiked ? 'Unlike' : 'Like')),
+                            const PopupMenuItem(value: 'radio', child: Text('Start radio')),
+                            if (t.downloadable) const PopupMenuItem(value: 'download', child: Text('Download')),
+                            if (jam.inJam && (jam.isAdmin || jam.allowParticipantAdd))
+                              const PopupMenuItem(value: 'jam', child: Text('Add to Jam')),
                           ],
                         ),
                       );
@@ -270,4 +309,22 @@ class _GenreItem {
   final IconData icon;
   final Color color;
   const _GenreItem(this.title, this.icon, this.color);
+}
+
+class _DeepSearchPrompt extends StatelessWidget {
+  final VoidCallback onTap;
+  const _DeepSearchPrompt({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+      child: TextButton.icon(
+        onPressed: onTap,
+        icon: const Icon(Icons.travel_explore, size: 18),
+        label: const Text("Didn't find your song? Try Deep Search."),
+        style: TextButton.styleFrom(foregroundColor: SonivoColors.accent),
+      ),
+    );
+  }
 }

@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import 'app.dart';
 import 'services/api_service.dart';
 import 'services/audio_handler.dart';
+import 'services/download_service.dart';
+import 'services/jam_service.dart';
 import 'services/library_service.dart';
 import 'state/library_provider.dart';
 import 'state/player_provider.dart';
@@ -32,12 +34,21 @@ Future<void> main() async {
   }
 
   final api = ApiService();
+  final downloads = DownloadService(api: api);
+  await downloads.init();
+  final jam = JamController(api: api);
+  final player = PlayerProvider(api: api, audioHandler: audioHandler)
+    ..downloads = downloads
+    ..jam = jam;
+  jam.onPlaybackChanged = player.syncToJam;
 
   runApp(
     MultiProvider(
       providers: [
         Provider<ApiService>.value(value: api),
-        ChangeNotifierProvider(create: (_) => PlayerProvider(api: api, audioHandler: audioHandler)),
+        ChangeNotifierProvider.value(value: player),
+        ChangeNotifierProvider.value(value: downloads),
+        ChangeNotifierProvider.value(value: jam),
         ChangeNotifierProvider(create: (_) => LibraryProvider()..refresh()),
       ],
       child: const SonivoApp(),

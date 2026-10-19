@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 
 import '../core/theme.dart';
 import '../models/playlist.dart';
+import '../services/download_service.dart';
 import '../state/library_provider.dart';
 import '../state/player_provider.dart';
+import 'downloads_screen.dart';
 import 'playlist_screen.dart';
 
 class LibraryScreen extends StatelessWidget {
@@ -118,6 +120,18 @@ class LibraryScreen extends StatelessWidget {
                   onTap: () => Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => PlaylistScreen(title: 'Liked Songs', tracks: library.liked),
                   )),
+                ),
+                ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: SonivoColors.surfaceHigh,
+                    child: Icon(Icons.download_done, color: SonivoColors.accent),
+                  ),
+                  title: const Text('Offline downloads', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                    '${context.watch<DownloadService>().completedCount} songs on this device',
+                    style: const TextStyle(color: SonivoColors.textSecondary),
+                  ),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DownloadsScreen())),
                 ),
                 const Divider(indent: 16, endIndent: 16),
                 ...library.playlists.map(

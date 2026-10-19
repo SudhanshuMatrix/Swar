@@ -7,6 +7,7 @@ import '../state/library_provider.dart';
 import '../state/player_provider.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/track_tile.dart';
+import 'jam_screen.dart';
 import 'library_screen.dart';
 import 'now_playing_screen.dart';
 import 'playlist_screen.dart';
@@ -39,6 +40,7 @@ class _HomeShellState extends State<HomeShell> {
       _HomeTab(onExploreTap: () => _switchToTab(1)),
       const SearchScreen(),
       const LibraryScreen(),
+      const JamScreen(),
     ];
 
     return Scaffold(
@@ -51,6 +53,7 @@ class _HomeShellState extends State<HomeShell> {
             if (hasCurrentTrack)
               GestureDetector(onTap: _openNowPlaying, child: const MiniPlayer()),
             BottomNavigationBar(
+              type: BottomNavigationBarType.fixed,
               currentIndex: _index,
               onTap: (i) => setState(() => _index = i),
               items: const [
@@ -61,6 +64,7 @@ class _HomeShellState extends State<HomeShell> {
                   activeIcon: Icon(Icons.library_music),
                   label: 'Library',
                 ),
+                BottomNavigationBarItem(icon: Icon(Icons.groups_outlined), activeIcon: Icon(Icons.groups), label: 'Jam'),
               ],
             ),
           ],

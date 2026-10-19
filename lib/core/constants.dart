@@ -1,4 +1,4 @@
-/// Base URL of the Sonivo backend (see /backend — it wraps yt-dlp over HTTP).
+/// Base URL of the Swar Go backend (see /server).
 ///
 /// Override at build/run time, since "localhost" means something different
 /// on every platform:

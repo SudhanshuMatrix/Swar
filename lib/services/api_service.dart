@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 
 import '../core/constants.dart';
@@ -21,10 +22,130 @@ class VideoStreamResult {
   VideoStreamResult({required this.videoUrl, required this.audioUrl, required this.track});
 }
 
-/// Talks to the Sonivo backend (/backend), which wraps yt-dlp over HTTP.
+/// An error from the Swar backend with its stable [code]
+/// (see server/docs/API.md) and a message safe to show to the user.
+class ApiException implements Exception {
+  final int status;
+  final String code;
+  final String message;
+  ApiException(this.status, this.code, this.message);
+
+  @override
+  String toString() => message;
+}
+
+class DeepSearchResult {
+  final List<Track> tracks;
+  final String notice;
+  DeepSearchResult(this.tracks, this.notice);
+}
+
+class RadioStation {
+  final String id;
+  final String label;
+
+  /// How the station was built, e.g. "provider_station_ranked" or
+  /// "random_discovery". Shown so the app never over-claims.
+  final String generation;
+  final List<Track> tracks;
+  RadioStation({required this.id, required this.label, required this.generation, required this.tracks});
+
+  factory RadioStation.fromJson(Map<String, dynamic> j) => RadioStation(
+        id: j['id'] as String,
+        label: (j['label'] as String?) ?? 'Radio',
+        generation: (j['generation'] as String?) ?? '',
+        tracks: ((j['tracks'] as List?) ?? const []).cast<Map<String, dynamic>>().map(Track.fromJson).toList(),
+      );
+}
+
+class DownloadEligibility {
+  final bool eligible;
+  final String reason;
+  final String localId;
+
+  /// The authorized source to download from, when eligible.
+  final String? url;
+  DownloadEligibility({required this.eligible, required this.reason, required this.localId, this.url});
+}
+
+/// Talks to the Swar Go backend (/server).
 class ApiService {
   final String baseUrl;
   ApiService({String? baseUrl}) : baseUrl = baseUrl ?? ApiConfig.baseUrl;
+
+  static const _deviceBox = 'swar_device';
+  String? _token;
+
+  // ---- Device identity ----
+
+  /// Returns a device token, registering this install on first use.
+  /// No account or personal data: the server only knows a random device id.
+  Future<String> deviceToken() async {
+    if (_token != null) return _token!;
+    final box = await Hive.openBox(_deviceBox);
+    final saved = box.get('token') as String?;
+    final savedFor = box.get('server') as String?;
+    if (saved != null && savedFor == baseUrl) {
+      return _token = saved;
+    }
+    final res = await http.post(Uri.parse('$baseUrl/v1/auth/device'));
+    final data = _data(res) as Map<String, dynamic>;
+    _token = data['token'] as String;
+    await box.put('token', _token);
+    await box.put('server', baseUrl);
+    return _token!;
+  }
+
+  Future<void> _forgetToken() async {
+    _token = null;
+    final box = await Hive.openBox(_deviceBox);
+    await box.delete('token');
+  }
+
+  /// Sends an authenticated /v1 request, re-registering once if the server
+  /// no longer knows the token (e.g. its secret changed).
+  Future<dynamic> _authed(String method, String path, {Object? body}) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final token = await deviceToken();
+      final req = http.Request(method, Uri.parse('$baseUrl$path'))..headers['Authorization'] = 'Bearer $token';
+      if (body != null) {
+        req.headers['Content-Type'] = 'application/json';
+        req.body = jsonEncode(body);
+      }
+      final res = await http.Response.fromStream(await req.send());
+      if (res.statusCode == 401 && attempt == 0) {
+        await _forgetToken();
+        continue;
+      }
+      return _data(res);
+    }
+  }
+
+  Future<dynamic> _public(String method, String path, {Object? body}) async {
+    final req = http.Request(method, Uri.parse('$baseUrl$path'));
+    if (body != null) {
+      req.headers['Content-Type'] = 'application/json';
+      req.body = jsonEncode(body);
+    }
+    return _data(await http.Response.fromStream(await req.send()));
+  }
+
+  /// Unwraps the {success, data} envelope or throws [ApiException].
+  dynamic _data(http.Response res) {
+    Map<String, dynamic>? body;
+    try {
+      body = jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {}
+    if (res.statusCode >= 200 && res.statusCode < 300 && body != null && body['success'] == true) {
+      return body['data'];
+    }
+    final err = body?['error'];
+    final code = err is Map ? (err['code'] as String? ?? 'error') : (body?['code'] as String? ?? 'error');
+    final msg = (body?['message'] as String?) ?? (err is String ? err : 'Request failed (${res.statusCode})');
+    throw ApiException(res.statusCode, code, msg);
+  }
+
+  // ---- Catalog (legacy routes, unchanged contract) ----
 
   Future<List<Track>> search(String query, {int limit = 25}) async {
     final uri = Uri.parse('$baseUrl/search').replace(queryParameters: {
@@ -33,26 +154,35 @@ class ApiService {
     });
     final res = await http.get(uri);
     if (res.statusCode != 200) {
-      throw Exception('Search failed (${res.statusCode}): ${res.body}');
+      throw _legacyError(res, 'Search failed');
     }
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     final results = (data['results'] as List).cast<Map<String, dynamic>>();
     return results.map(Track.fromJson).toList();
   }
 
-  Future<StreamResult> resolveAudio(String videoId) async {
-    final res = await http.get(Uri.parse('$baseUrl/track/$videoId'));
+  ApiException _legacyError(http.Response res, String fallback) {
+    try {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      return ApiException(res.statusCode, (body['code'] as String?) ?? 'error', (body['error'] as String?) ?? fallback);
+    } catch (_) {
+      return ApiException(res.statusCode, 'error', '$fallback (${res.statusCode})');
+    }
+  }
+
+  Future<StreamResult> resolveAudio(String trackId) async {
+    final res = await http.get(Uri.parse('$baseUrl/track/${Uri.encodeComponent(trackId)}'));
     if (res.statusCode != 200) {
-      throw Exception('Could not resolve audio (${res.statusCode}): ${res.body}');
+      throw _legacyError(res, 'Could not resolve audio');
     }
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     return StreamResult(url: data['audio_url'] as String, track: Track.fromJson(data));
   }
 
-  Future<VideoStreamResult> resolveVideo(String videoId) async {
-    final res = await http.get(Uri.parse('$baseUrl/video/$videoId'));
+  Future<VideoStreamResult> resolveVideo(String trackId) async {
+    final res = await http.get(Uri.parse('$baseUrl/video/${Uri.encodeComponent(trackId)}'));
     if (res.statusCode != 200) {
-      throw Exception('Could not resolve video (${res.statusCode}): ${res.body}');
+      throw _legacyError(res, 'Could not resolve video');
     }
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     return VideoStreamResult(
@@ -62,13 +192,111 @@ class ApiService {
     );
   }
 
-  Future<List<Track>> getRelated(String videoId) async {
-    final res = await http.get(Uri.parse('$baseUrl/related/$videoId'));
+  Future<List<Track>> getRelated(String trackId) async {
+    final res = await http.get(Uri.parse('$baseUrl/related/${Uri.encodeComponent(trackId)}'));
     if (res.statusCode != 200) {
-      throw Exception('Could not fetch related tracks (${res.statusCode}): ${res.body}');
+      throw _legacyError(res, 'Could not fetch related tracks');
     }
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     final results = (data['results'] as List).cast<Map<String, dynamic>>();
     return results.map(Track.fromJson).toList();
+  }
+
+  // ---- Deep Search ----
+
+  /// Runs only when the user asks for it: the server starts yt-dlp for
+  /// each call, so it is rate limited more strictly than normal search.
+  Future<DeepSearchResult> deepSearch(String query, {int limit = 10}) async {
+    final data = await _public('POST', '/v1/search/deep', body: {'query': query, 'limit': limit}) as Map<String, dynamic>;
+    final results = ((data['results'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    return DeepSearchResult(results.map(Track.fromJson).toList(), (data['notice'] as String?) ?? '');
+  }
+
+  // ---- Playback ----
+
+  /// Warms the server's cache for the next one or two tracks.
+  Future<void> prefetch(List<String> trackIds, {bool dataSaver = false}) async {
+    if (trackIds.isEmpty) return;
+    await _public('POST', '/v1/playback/prefetch', body: {'trackIds': trackIds.take(2).toList(), 'dataSaver': dataSaver});
+  }
+
+  // ---- Radio ----
+
+  Future<RadioStation> startRadio(String kind, String seed, {int count = 15}) async {
+    final data = await _authed('POST', '/v1/radio', body: {'kind': kind, 'seed': seed, 'count': count});
+    return RadioStation.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<List<Track>> radioNext(String stationId, {int count = 10}) async {
+    final data = await _authed('POST', '/v1/radio/$stationId/next', body: {'count': count});
+    return RadioStation.fromJson(data as Map<String, dynamic>).tracks;
+  }
+
+  // ---- Downloads ----
+
+  Future<DownloadEligibility> downloadEligibility(String trackId) async {
+    final data = await _public('GET', '/v1/downloads/eligibility/${Uri.encodeComponent(trackId)}') as Map<String, dynamic>;
+    String? url;
+    final d = data['descriptor'];
+    if (d is Map && d['sources'] is List) {
+      final audio = (d['sources'] as List).whereType<Map>().where((s) => s['kind'] == 'audio').toList();
+      // Highest quality the source offers for the offline copy.
+      audio.sort((a, b) => ((b['bitrate'] as num?) ?? 0).compareTo((a['bitrate'] as num?) ?? 0));
+      if (audio.isNotEmpty) url = audio.first['url'] as String?;
+    }
+    return DownloadEligibility(
+      eligible: data['eligible'] == true && url != null,
+      reason: (data['reason'] as String?) ?? '',
+      localId: (data['localId'] as String?) ?? trackId,
+      url: url,
+    );
+  }
+
+  /// Reports download status so the server-side record stays in step.
+  Future<void> reportDownload(String trackId, String status,
+      {int bytesTotal = 0, int bytesDone = 0, String sha256 = '', String error = ''}) async {
+    await _authed('PUT', '/v1/downloads/${Uri.encodeComponent(trackId)}', body: {
+      'status': status,
+      'bytesTotal': bytesTotal,
+      'bytesDone': bytesDone,
+      'sha256': sha256,
+      'error': error,
+    });
+  }
+
+  Future<void> removeDownloadRecord(String trackId) async {
+    await _authed('DELETE', '/v1/downloads/${Uri.encodeComponent(trackId)}');
+  }
+
+  // ---- Swar Jam ----
+
+  Future<Map<String, dynamic>> createJam(String displayName, {bool allowParticipantAdd = true, bool allowVoting = false}) async {
+    return await _authed('POST', '/v1/jams', body: {
+      'displayName': displayName,
+      'settings': {'allowParticipantAdd': allowParticipantAdd, 'allowVoting': allowVoting},
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> joinJam(String code, String displayName) async {
+    return await _authed('POST', '/v1/jams/join', body: {'code': code, 'displayName': displayName}) as Map<String, dynamic>;
+  }
+
+  Future<void> leaveJam(String jamId) => _authed('POST', '/v1/jams/$jamId/leave');
+
+  Future<void> endJam(String jamId) => _authed('POST', '/v1/jams/$jamId/end');
+
+  Future<void> removeJamParticipant(String jamId, String participantId) =>
+      _authed('DELETE', '/v1/jams/$jamId/participants/$participantId');
+
+  /// WebSocket address for a Jam. The token goes in the query because
+  /// WebSocket clients cannot always set headers; the server never logs it.
+  Future<Uri> jamSocketUri(String jamId) async {
+    final token = await deviceToken();
+    final base = Uri.parse(baseUrl);
+    return base.replace(
+      scheme: base.scheme == 'https' ? 'wss' : 'ws',
+      path: '/v1/jams/$jamId/ws',
+      queryParameters: {'access_token': token},
+    );
   }
 }

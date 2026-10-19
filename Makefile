@@ -1,4 +1,4 @@
-# Sonivo — Flutter client (android/ios/linux/web/windows) + Go backend (yt-dlp resolver)
+# Sonivo — Flutter client (android/ios/linux/web/windows) + Swar Go backend (server/)
 #
 # First time:
 #   make setup
@@ -11,9 +11,10 @@
 
 FLUTTER ?= flutter
 GO ?= go
-BACKEND_DIR := backend
-BACKEND_BIN := bin/sonivo-backend
+BACKEND_DIR := server
 
+
+.PHONY: backend-test
 .PHONY: setup android ios web linux windows \
         build-android build-appbundle build-ios build-web build-linux build-windows \
         backend backend-build clean doctor check-yt-dlp
@@ -23,7 +24,7 @@ BACKEND_BIN := bin/sonivo-backend
 setup: check-yt-dlp
 	$(FLUTTER) create --platforms=android,ios,linux,web,windows --org com.sonivo --project-name sonivo .
 	$(FLUTTER) pub get
-	cd $(BACKEND_DIR) && $(GO) mod tidy
+	cd $(BACKEND_DIR) && $(GO) mod download
 
 check-yt-dlp:
 	@command -v yt-dlp >/dev/null 2>&1 || echo "WARNING: yt-dlp not found on PATH. Install it with 'pip install -U yt-dlp' or see https://github.com/yt-dlp/yt-dlp#installation"
@@ -65,13 +66,16 @@ build-linux:
 build-windows:
 	$(FLUTTER) build windows --release
 
-# ---- Backend (Go, wraps the yt-dlp CLI) ----
+# ---- Backend (Swar Go server; yt-dlp is only needed for Deep Search) ----
 
 backend: check-yt-dlp
-	cd $(BACKEND_DIR) && $(GO) run .
+	cd $(BACKEND_DIR) && $(GO) run ./cmd/server
 
 backend-build:
-	cd $(BACKEND_DIR) && $(GO) build -o ../$(BACKEND_BIN).exe .
+	$(MAKE) -C $(BACKEND_DIR) build
+
+backend-test:
+	$(MAKE) -C $(BACKEND_DIR) check
 
 # ---- Misc ----
 
