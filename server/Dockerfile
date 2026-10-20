@@ -10,18 +10,31 @@ COPY . .
 RUN go build -trimpath -ldflags="-s -w" -o /out/swar-server ./cmd/server
 
 # ---- runtime ----
-FROM alpine:3.20
+# Debian rather than Alpine so the latest yt-dlp and the Deno JavaScript
+# runtime it needs for YouTube can be installed (distribution packages lag
+# behind YouTube's changes and many songs then fail to play).
+FROM debian:bookworm-slim
 # yt-dlp is only needed for Deep Search. Build with --build-arg WITH_YTDLP=false
 # to leave it out (Deep Search then reports itself unavailable).
 ARG WITH_YTDLP=true
-RUN apk add --no-cache ca-certificates tzdata \
- && if [ "$WITH_YTDLP" = "true" ]; then apk add --no-cache yt-dlp; fi \
- && addgroup -S swar && adduser -S -G swar -H swar \
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates tzdata wget \
+ && if [ "$WITH_YTDLP" = "true" ]; then \
+      apt-get install -y --no-install-recommends python3 python3-pip unzip \
+      && pip3 install --break-system-packages --no-cache-dir -U "yt-dlp[default]" \
+      && wget -qO /tmp/deno.zip https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip \
+      && unzip -q /tmp/deno.zip -d /usr/local/bin && rm /tmp/deno.zip \
+      && apt-get purge -y unzip; \
+    fi \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd -r swar && useradd -r -g swar -M swar \
  && mkdir -p /data && chown swar:swar /data
 COPY --from=build /out/swar-server /usr/local/bin/swar-server
 USER swar
 ENV SWAR_ENV=production \
     SWAR_ADDR=:8765 \
+    XDG_CACHE_HOME=/tmp/swar-cache \
+    DENO_DIR=/tmp/swar-cache/deno \
     SWAR_DB_PATH=/data/swar.db
 VOLUME ["/data"]
 EXPOSE 8765

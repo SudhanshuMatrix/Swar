@@ -209,3 +209,41 @@ func TestMediaSourcesGatedAndDRMSkipped(t *testing.T) {
 }
 
 func itoa(n int64) string { b, _ := json.Marshal(n); return string(b) }
+
+func TestRestrictedVideoFallsBackToAnotherUpload(t *testing.T) {
+	gated, _ := json.Marshal(map[string]any{"id": "AAAAAAAAAAA", "availability": "needs_auth", "formats": []any{}})
+	search, _ := json.Marshal(map[string]any{"entries": []any{
+		map[string]any{"id": "AAAAAAAAAAA", "title": "Peacock", "channel": "KatyPerryVEVO", "duration": 230},
+		map[string]any{"id": "BBBBBBBBBBB", "title": "Peacock (Audio)", "channel": "Katy Perry", "duration": 231},
+	}})
+	ok, _ := json.Marshal(map[string]any{"id": "BBBBBBBBBBB", "availability": "public", "formats": []any{
+		map[string]any{"format_id": "a", "url": "https://x/b", "ext": "m4a", "acodec": "mp4a", "vcodec": "none", "abr": 128, "protocol": "https"},
+	}})
+	var calls [][]string
+	run := func(ctx context.Context, args []string, max int64) ([]byte, error) {
+		calls = append(calls, args)
+		target := args[len(args)-1]
+		switch {
+		case strings.HasPrefix(target, "ytsearch"):
+			return search, nil
+		case strings.HasSuffix(target, "AAAAAAAAAAA"):
+			return gated, nil
+		default:
+			return ok, nil
+		}
+	}
+	s := New(Options{Runner: run, Playback: true})
+	if _, err := s.Search(context.Background(), "peacock katy perry", 5); err != nil {
+		t.Fatal(err)
+	}
+	srcs, _, err := s.MediaSources(context.Background(), "AAAAAAAAAAA")
+	if err != nil {
+		t.Fatalf("want the other upload to play: %v", err)
+	}
+	if srcs[0].URL != "https://x/b" {
+		t.Fatalf("sources: %+v", srcs)
+	}
+	if q := calls[2][len(calls[2])-1]; !strings.Contains(q, "Peacock") || !strings.Contains(q, "audio") {
+		t.Fatalf("fallback search should use the song's title: %q", q)
+	}
+}

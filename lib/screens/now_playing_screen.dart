@@ -4,8 +4,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_icons.dart';
 import '../core/theme.dart';
 import '../state/player_provider.dart';
+import '../widgets/artist_link.dart';
+import '../widgets/jam_picker.dart';
 import '../widgets/track_actions.dart';
 import '../widgets/ui.dart';
 
@@ -56,7 +59,7 @@ void showQueueSheet(BuildContext context) {
             Expanded(
               child: queue.isEmpty
                   ? const EmptyState(
-                      icon: Icons.queue_music_rounded,
+                      icon: PhosphorIconsRegular.playlist,
                       title: 'Queue is empty',
                       message: 'Songs you add to the queue show up here.',
                     )
@@ -82,13 +85,16 @@ void showQueueSheet(BuildContext context) {
                             t.artist,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: SonivoColors.textSecondary, fontSize: 12),
+                            style: const TextStyle(
+                                color: SonivoColors.textSecondary,
+                                fontSize: 12,
+                                fontFeatures: [FontFeature.tabularFigures()]),
                           ),
                           trailing: isCurrent
-                              ? const Icon(Icons.graphic_eq_rounded, color: SonivoColors.accent)
+                              ? const Icon(PhosphorIconsRegular.waveform, color: SonivoColors.accent)
                               : IconButton(
                                   tooltip: 'Remove',
-                                  icon: const Icon(Icons.close_rounded, size: 18),
+                                  icon: const Icon(PhosphorIconsRegular.x, size: 18),
                                   onPressed: () => player.removeFromQueue(i),
                                 ),
                           onTap: () => player.jumpToQueueIndex(i),
@@ -113,7 +119,8 @@ class NowPlayingScreen extends StatelessWidget {
 
     if (track == null) {
       return const Scaffold(
-        body: EmptyState(icon: Icons.music_off_rounded, title: 'Nothing playing', message: 'Pick a song to start.'),
+        body: EmptyState(
+            icon: PhosphorIconsRegular.musicNotesMinus, title: 'Nothing playing', message: 'Pick a song to start.'),
       );
     }
 
@@ -148,7 +155,7 @@ class NowPlayingScreen extends StatelessWidget {
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30),
+          icon: const Icon(PhosphorIconsRegular.caretDown, size: 30),
           tooltip: 'Close',
           onPressed: () => Navigator.of(context).maybePop(),
         ),
@@ -163,12 +170,17 @@ class NowPlayingScreen extends StatelessWidget {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.playlist_add_rounded),
+            icon: const Icon(PhosphorIconsRegular.listPlus),
             tooltip: 'Add to playlist',
             onPressed: () => showAddToPlaylist(context, track),
           ),
           IconButton(
-            icon: const Icon(Icons.queue_music_rounded),
+            icon: const Icon(PhosphorIconsRegular.usersThree),
+            tooltip: 'Add to Jam',
+            onPressed: () => addToJam(context, track),
+          ),
+          IconButton(
+            icon: const Icon(PhosphorIconsRegular.playlist),
             tooltip: 'Queue',
             onPressed: () => showQueueSheet(context),
           ),
@@ -259,10 +271,12 @@ class _Controls extends StatelessWidget {
                   Text(track.title,
                       style: Theme.of(context).textTheme.headlineSmall, maxLines: 2, overflow: TextOverflow.ellipsis),
                   const SizedBox(height: Gaps.xs),
-                  Text(track.artist,
-                      style: const TextStyle(fontSize: 15, color: SonivoColors.textSecondary),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
+                  ArtistLinks(track.artist,
+                      closeCurrent: true,
+                      style: const TextStyle(
+                          fontSize: 16,
+                          color: SonivoColors.textSecondary,
+                          fontFeatures: [FontFeature.tabularFigures()])),
                 ],
               ),
             ),
@@ -277,9 +291,11 @@ class _Controls extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(formatDuration(player.position),
-                  style: const TextStyle(color: SonivoColors.textSecondary, fontSize: 12)),
+                  style: const TextStyle(
+                      color: SonivoColors.textSecondary, fontSize: 12, fontFeatures: [FontFeature.tabularFigures()])),
               Text(formatDuration(player.duration),
-                  style: const TextStyle(color: SonivoColors.textSecondary, fontSize: 12)),
+                  style: const TextStyle(
+                      color: SonivoColors.textSecondary, fontSize: 12, fontFeatures: [FontFeature.tabularFigures()])),
             ],
           ),
         ),
@@ -288,25 +304,25 @@ class _Controls extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             IconButton(
-              icon:
-                  Icon(Icons.shuffle_rounded, color: player.shuffle ? SonivoColors.accent : SonivoColors.textSecondary),
+              icon: Icon(PhosphorIconsRegular.shuffle,
+                  color: player.shuffle ? SonivoColors.accent : SonivoColors.textSecondary),
               tooltip: 'Shuffle',
               onPressed: player.toggleShuffle,
             ),
             IconButton(
-              icon: const Icon(Icons.skip_previous_rounded, size: 40),
+              icon: const Icon(PhosphorIconsFill.skipBack, size: 40),
               tooltip: 'Previous',
               onPressed: player.previous,
             ),
             GradientPlayButton(size: 72, playing: player.playing, loading: player.loading, onPressed: player.playPause),
             IconButton(
-              icon: const Icon(Icons.skip_next_rounded, size: 40),
+              icon: const Icon(PhosphorIconsFill.skipForward, size: 40),
               tooltip: 'Next',
               onPressed: player.next,
             ),
             IconButton(
               icon: Icon(
-                player.repeat == PlaybackRepeatMode.one ? Icons.repeat_one_rounded : Icons.repeat_rounded,
+                player.repeat == PlaybackRepeatMode.one ? PhosphorIconsRegular.repeatOnce : PhosphorIconsRegular.repeat,
                 color: player.repeat == PlaybackRepeatMode.off ? SonivoColors.textSecondary : SonivoColors.accent,
               ),
               tooltip: 'Repeat',

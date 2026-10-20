@@ -28,6 +28,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"swar/internal/catalog"
@@ -55,6 +56,32 @@ type Service struct {
 	sem chan struct{}
 	run Runner
 	m   *observability.Metrics
+
+	// Title and artist of recently seen videos, so a video that cannot be
+	// played can be swapped for another public upload of the same song.
+	metaMu sync.Mutex
+	meta   map[string]string
+}
+
+const maxMeta = 4000
+
+func (s *Service) rememberMeta(id, title, artist string) {
+	q := strings.TrimSpace(title + " " + artist)
+	if id == "" || q == "" {
+		return
+	}
+	s.metaMu.Lock()
+	defer s.metaMu.Unlock()
+	if s.meta == nil || len(s.meta) >= maxMeta {
+		s.meta = map[string]string{}
+	}
+	s.meta[id] = q
+}
+
+func (s *Service) metaQuery(id string) string {
+	s.metaMu.Lock()
+	defer s.metaMu.Unlock()
+	return s.meta[id]
 }
 
 func New(o Options) *Service {
@@ -229,6 +256,7 @@ func (s *Service) parseSearch(out []byte, limit int) ([]Candidate, error) {
 func (s *Service) track(e ytEntry) catalog.Track {
 	artist := firstNonEmpty(e.Artist, e.Channel, e.Uploader)
 	title := firstNonEmpty(e.Track, e.Title)
+	s.rememberMeta(e.ID, title, strings.TrimSuffix(artist, "VEVO"))
 	t := catalog.Track{
 		ID:           catalog.MakeID(catalog.ProviderYouTube, e.ID),
 		Provider:     catalog.ProviderYouTube,
@@ -318,6 +346,49 @@ func (s *Service) MediaSources(ctx context.Context, id string) ([]catalog.MediaS
 	if !ytIDRe.MatchString(id) {
 		return nil, time.Time{}, catalog.Invalid("invalid video id")
 	}
+	srcs, until, err := s.resolveVideo(ctx, id)
+	if err == nil || !replaceable(err) {
+		return srcs, until, err
+	}
+	// Age-gated, members-only or label-blocked uploads are common for
+	// international releases. Another public upload of the same song
+	// (official audio, lyric video, topic track) usually plays.
+	q := s.metaQuery(id)
+	if q == "" {
+		return nil, time.Time{}, err
+	}
+	cands, serr := s.Search(ctx, q+" audio", 5)
+	if serr != nil {
+		return nil, time.Time{}, err
+	}
+	tried := 0
+	for _, c := range cands {
+		if c.ProviderID == id || tried >= 3 || ctx.Err() != nil {
+			continue
+		}
+		tried++
+		if alt, altUntil, aerr := s.resolveVideo(ctx, c.ProviderID); aerr == nil {
+			s.m.Inc("deepsearch_resolve_fallbacks_total")
+			return alt, altUntil, nil
+		}
+	}
+	return nil, time.Time{}, err
+}
+
+// replaceable reports whether a failed resolve may be retried with another
+// upload of the same song (not timeouts, rate limits or a missing binary).
+func replaceable(err error) bool {
+	if errors.Is(err, errNotInstalled) {
+		return false
+	}
+	switch catalog.KindOf(err) {
+	case catalog.KindUnavailable, catalog.KindUpstream:
+		return true
+	}
+	return false
+}
+
+func (s *Service) resolveVideo(ctx context.Context, id string) ([]catalog.MediaSource, time.Time, error) {
 	release, err := s.acquire(ctx)
 	if err != nil {
 		return nil, time.Time{}, err
@@ -328,9 +399,17 @@ func (s *Service) MediaSources(ctx context.Context, id string) ([]catalog.MediaS
 	s.m.Inc("deepsearch_resolves_total")
 	args := []string{
 		"--ignore-config", "--no-warnings", "--skip-download", "--dump-single-json",
-		"--no-playlist", "--socket-timeout", "10", "--", watchURL(id),
+		"--no-playlist", "--socket-timeout", "10",
+		// Popular videos list captions in every language, which can make
+		// the JSON larger than the output limit.
+		"--extractor-args", "youtube:skip=translated_subs",
+		"--", watchURL(id),
 	}
-	out, err := s.run(ctx, args, s.opt.MaxOutput)
+	limit := s.opt.MaxOutput
+	if limit < 32<<20 {
+		limit = 32 << 20
+	}
+	out, err := s.run(ctx, args, limit)
 	if err != nil {
 		return nil, time.Time{}, s.classify(ctx, err)
 	}

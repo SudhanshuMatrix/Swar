@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_icons.dart';
 import '../core/genres.dart';
 import '../core/theme.dart';
 import '../models/track.dart';
 import '../state/library_provider.dart';
 import '../state/player_provider.dart';
+import '../widgets/artist_link.dart';
 import '../widgets/genre_card.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/player_bar.dart';
@@ -27,10 +29,10 @@ class _Tab {
 }
 
 const _tabs = [
-  _Tab('Home', Icons.home_outlined, Icons.home_rounded),
-  _Tab('Search', Icons.search_rounded, Icons.search_rounded),
-  _Tab('Library', Icons.library_music_outlined, Icons.library_music_rounded),
-  _Tab('Jam', Icons.groups_outlined, Icons.groups_rounded),
+  _Tab('Home', PhosphorIconsRegular.house, PhosphorIconsFill.house),
+  _Tab('Search', PhosphorIconsRegular.magnifyingGlass, PhosphorIconsBold.magnifyingGlass),
+  _Tab('Library', PhosphorIconsRegular.books, PhosphorIconsFill.books),
+  _Tab('Jam', PhosphorIconsRegular.usersThree, PhosphorIconsFill.usersThree),
 ];
 
 /// True while the keyboard focus is in a text field, so shortcuts such as
@@ -54,6 +56,18 @@ class _HomeShellState extends State<HomeShell> {
   // Each tab keeps its own page stack, so opening an artist or playlist
   // keeps the sidebar, tabs and player in place.
   final _navigators = List.generate(_tabs.length, (_) => GlobalKey<NavigatorState>());
+
+  @override
+  void initState() {
+    super.initState();
+    openInShell = (page) => _navigators[_index].currentState?.push(MaterialPageRoute(builder: (_) => page));
+  }
+
+  @override
+  void dispose() {
+    openInShell = null;
+    super.dispose();
+  }
 
   void _openNowPlaying() {
     if (context.read<PlayerProvider>().currentTrack == null) return;
@@ -248,7 +262,7 @@ class _Sidebar extends StatelessWidget {
                       fontSize: 11, letterSpacing: 1.4, fontWeight: FontWeight.w700, color: SonivoColors.textMuted)),
             ),
             _SidebarItem(
-              icon: Icons.favorite_rounded,
+              icon: PhosphorIconsFill.heart,
               iconColor: SonivoColors.rose,
               label: 'Liked Songs',
               trailing: library.liked.isEmpty ? null : '${library.liked.length}',
@@ -260,7 +274,7 @@ class _Sidebar extends StatelessWidget {
                 children: [
                   for (final p in library.playlists)
                     _SidebarItem(
-                      icon: Icons.queue_music_rounded,
+                      icon: PhosphorIconsRegular.playlist,
                       label: p.name,
                       trailing: p.tracks.isEmpty ? null : '${p.tracks.length}',
                       onTap: () => onOpenPlaylist(PlaylistScreen(title: p.name, tracks: p.tracks, playlistId: p.id)),
@@ -374,7 +388,7 @@ class _HomeTab extends StatelessWidget {
                       ),
                     ),
                     IconButton.filledTonal(
-                      icon: const Icon(Icons.search_rounded),
+                      icon: const Icon(PhosphorIconsRegular.magnifyingGlass),
                       tooltip: 'Search',
                       onPressed: onExploreTap,
                     ),
@@ -397,7 +411,7 @@ class _HomeTab extends StatelessWidget {
                     if (library.liked.isNotEmpty)
                       _QuickTile(
                         title: 'Liked Songs',
-                        icon: Icons.favorite_rounded,
+                        icon: PhosphorIconsFill.heart,
                         gradient: const LinearGradient(colors: [SonivoColors.rose, SonivoColors.violet]),
                         onTap: () => Navigator.of(context).push(MaterialPageRoute(
                             builder: (_) => PlaylistScreen(title: 'Liked Songs', tracks: library.liked))),
@@ -405,7 +419,7 @@ class _HomeTab extends StatelessWidget {
                     for (final p in library.playlists.take(5))
                       _QuickTile(
                         title: p.name,
-                        icon: Icons.queue_music_rounded,
+                        icon: PhosphorIconsRegular.playlist,
                         onTap: () => Navigator.of(context).push(MaterialPageRoute(
                           builder: (_) => PlaylistScreen(title: p.name, tracks: p.tracks, playlistId: p.id),
                         )),
@@ -460,7 +474,7 @@ class _HomeTab extends StatelessWidget {
                   subtitle: '${library.liked.length} songs',
                   action: TextButton.icon(
                     onPressed: () => player.playQueue(library.liked, 0),
-                    icon: const Icon(Icons.play_arrow_rounded),
+                    icon: const Icon(PhosphorIconsFill.play),
                     label: const Text('Play all'),
                   ),
                 ),
@@ -519,7 +533,7 @@ class _WelcomeBanner extends StatelessWidget {
             FilledButton.icon(
               style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: SonivoColors.onAccent),
               onPressed: onExplore,
-              icon: const Icon(Icons.explore_rounded),
+              icon: const Icon(PhosphorIconsRegular.compass),
               label: const Text('Start exploring'),
             ),
           ],

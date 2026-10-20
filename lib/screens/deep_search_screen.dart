@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_icons.dart';
 import '../core/errors.dart';
 import '../core/theme.dart';
 import '../models/track.dart';
 import '../services/api_service.dart';
 import '../state/player_provider.dart';
+import '../widgets/track_actions.dart';
 import '../widgets/track_tile.dart';
 
 /// Results of a user-triggered Deep Search (yt-dlp on the server).
@@ -80,8 +82,8 @@ class _DeepSearchScreenState extends State<DeepSearchScreen> {
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
                 hintText: 'Song name, artist, or a YouTube link',
-                prefixIcon: const Icon(Icons.travel_explore),
-                suffixIcon: IconButton(icon: const Icon(Icons.arrow_forward), onPressed: _run),
+                prefixIcon: const Icon(PhosphorIconsRegular.globe),
+                suffixIcon: IconButton(icon: const Icon(PhosphorIconsRegular.arrowRight), onPressed: _run),
                 filled: true,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
               ),
@@ -127,10 +129,10 @@ class _DeepSearchScreenState extends State<DeepSearchScreen> {
                         _results.where((r) => r.playable).toList().indexOf(t));
                   },
                   trailing: t.playable
-                      ? const Icon(Icons.play_arrow, color: SonivoColors.textSecondary)
+                      ? TrackMenu(track: t, showRadio: false)
                       : const Tooltip(
                           message: 'Metadata only on this server',
-                          child: Icon(Icons.info_outline, color: SonivoColors.textMuted),
+                          child: Icon(PhosphorIconsRegular.info, color: SonivoColors.textMuted),
                         ),
                 );
               },

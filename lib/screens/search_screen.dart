@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_icons.dart';
 import '../core/errors.dart';
 import '../core/genres.dart';
 import '../core/theme.dart';
@@ -134,11 +135,11 @@ class _SearchScreenState extends State<SearchScreen> {
                 style: const TextStyle(fontSize: 15),
                 decoration: InputDecoration(
                   hintText: 'Songs, singers or playlists',
-                  prefixIcon: const Icon(Icons.search_rounded),
+                  prefixIcon: const Icon(PhosphorIconsRegular.magnifyingGlass),
                   suffixIcon: _controller.text.isNotEmpty
                       ? IconButton(
                           tooltip: 'Clear',
-                          icon: const Icon(Icons.close_rounded),
+                          icon: const Icon(PhosphorIconsRegular.x),
                           onPressed: () {
                             _controller.clear();
                             setState(() {
@@ -180,7 +181,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.error_outline_rounded, color: SonivoColors.danger),
+                      const Icon(PhosphorIconsRegular.warningCircle, color: SonivoColors.danger),
                       const SizedBox(width: Gaps.sm),
                       Expanded(child: Text(_error!, style: const TextStyle(color: SonivoColors.danger, fontSize: 13))),
                     ],
@@ -263,7 +264,7 @@ class _DeepSearchPrompt extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(side - Gaps.sm, Gaps.xs, side, 0),
       child: TextButton.icon(
         onPressed: onTap,
-        icon: const Icon(Icons.travel_explore_rounded, size: 18),
+        icon: const Icon(PhosphorIconsRegular.globe, size: 18),
         label: const Text("Didn't find your song? Try Deep Search"),
       ),
     );
@@ -301,7 +302,7 @@ class _PlaylistRow extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Artwork(url: p.imageUrl, size: 140, radius: Gaps.radius, icon: Icons.queue_music_rounded),
+                      Artwork(url: p.imageUrl, size: 140, radius: Gaps.radius, icon: PhosphorIconsRegular.playlist),
                       const SizedBox(height: Gaps.sm),
                       Text(p.name,
                           maxLines: 1,
@@ -351,7 +352,7 @@ class _ArtistRow extends StatelessWidget {
                   width: 104,
                   child: Column(
                     children: [
-                      Artwork(url: a.imageUrl, size: 100, circle: true, icon: Icons.person_rounded),
+                      Artwork(url: a.imageUrl, size: 100, circle: true, icon: PhosphorIconsRegular.user),
                       const SizedBox(height: Gaps.sm),
                       Text(a.name,
                           maxLines: 1,

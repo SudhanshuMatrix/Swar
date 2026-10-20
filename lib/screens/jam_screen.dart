@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_icons.dart';
 import '../core/errors.dart';
 import '../core/jam_validation.dart';
 import '../core/theme.dart';
 import '../services/jam_service.dart';
+import '../widgets/jam_picker.dart';
 import '../widgets/track_tile.dart';
 
 /// Swar Jam: listen together. Everyone plays the same queue on their own
@@ -117,7 +119,7 @@ class _JamLobbyState extends State<_JamLobby> {
         const SizedBox(height: 8),
         FilledButton.icon(
           onPressed: _busy ? null : _start,
-          icon: const Icon(Icons.group_add),
+          icon: const Icon(PhosphorIconsRegular.userPlus),
           label: const Text('Start a Jam'),
         ),
         const SizedBox(height: 28),
@@ -137,7 +139,7 @@ class _JamLobbyState extends State<_JamLobby> {
         ),
         OutlinedButton.icon(
           onPressed: _busy ? null : _join,
-          icon: const Icon(Icons.login),
+          icon: const Icon(PhosphorIconsRegular.signIn),
           label: const Text('Join'),
         ),
         if (_busy) const Padding(padding: EdgeInsets.only(top: 16), child: LinearProgressIndicator()),
@@ -171,7 +173,7 @@ class _JamRoom extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.music_off, size: 48, color: SonivoColors.textSecondary),
+            const Icon(PhosphorIconsRegular.musicNotesMinus, size: 48, color: SonivoColors.textSecondary),
             const SizedBox(height: 12),
             Text(jam.closedReason!, style: const TextStyle(fontSize: 16)),
             const SizedBox(height: 12),
@@ -195,7 +197,7 @@ class _JamRoom extends StatelessWidget {
           title: Text(jam.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           subtitle: Row(
             children: [
-              Icon(Icons.circle, size: 10, color: status.$2),
+              Icon(PhosphorIconsFill.circle, size: 10, color: status.$2),
               const SizedBox(width: 6),
               Text(status.$1),
               if (jam.connection == JamConnection.offline) ...[
@@ -215,12 +217,12 @@ class _JamRoom extends StatelessWidget {
         Card(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: ListTile(
-            leading: const Icon(Icons.key),
+            leading: const Icon(PhosphorIconsRegular.key),
             title: Text(jam.code, style: const TextStyle(fontSize: 22, letterSpacing: 4, fontWeight: FontWeight.bold)),
             subtitle: const Text('Share this code to invite friends'),
             trailing: IconButton(
               tooltip: 'Copy code',
-              icon: const Icon(Icons.copy),
+              icon: const Icon(PhosphorIconsRegular.copy),
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: jam.code));
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Jam code copied')));
@@ -234,13 +236,26 @@ class _JamRoom extends StatelessWidget {
             child: Text(jam.lastError!, style: const TextStyle(color: SonivoColors.danger, fontSize: 13)),
           ),
         _NowPlayingCard(jam: jam),
-        const _SectionTitle('Up next'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Row(
+            children: [
+              Expanded(child: Text('Up next', style: Theme.of(context).textTheme.titleLarge)),
+              if (jam.isAdmin || jam.allowParticipantAdd)
+                FilledButton.tonalIcon(
+                  onPressed: () => showJamSongPicker(context),
+                  icon: const Icon(PhosphorIconsRegular.listPlus),
+                  label: const Text('Add songs'),
+                ),
+            ],
+          ),
+        ),
         if (jam.queue.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               jam.isAdmin || jam.allowParticipantAdd
-                  ? 'The queue is empty. Add songs with "Add to Jam" in any song\'s menu.'
+                  ? 'The queue is empty. Tap "Add songs", or use "Add to Jam" in any song\'s menu.'
                   : 'The queue is empty. Only the admin can add songs in this Jam.',
               style: const TextStyle(color: SonivoColors.textSecondary),
             ),
@@ -252,11 +267,11 @@ class _JamRoom extends StatelessWidget {
               if (jam.isAdmin) jam.jump(jam.queue[i].entryId);
             },
             trailing: i == jam.currentIndex
-                ? const Icon(Icons.graphic_eq, color: SonivoColors.accent)
+                ? const Icon(PhosphorIconsRegular.waveform, color: SonivoColors.accent)
                 : (jam.isAdmin || jam.queue[i].addedBy == jam.you)
                     ? IconButton(
                         tooltip: 'Remove from queue',
-                        icon: const Icon(Icons.remove_circle_outline),
+                        icon: const Icon(PhosphorIconsRegular.minusCircle),
                         onPressed: () => jam.removeEntry(jam.queue[i].entryId),
                       )
                     : null,
@@ -274,7 +289,7 @@ class _JamRoom extends StatelessWidget {
                 if (jam.isAdmin && !p.isAdmin)
                   IconButton(
                     tooltip: 'Remove from Jam',
-                    icon: const Icon(Icons.person_remove_outlined),
+                    icon: const Icon(PhosphorIconsRegular.userMinus),
                     onPressed: () async {
                       final ok = await showDialog<bool>(
                         context: context,
@@ -299,7 +314,7 @@ class _JamRoom extends StatelessWidget {
           const _SectionTitle('Removed'),
           for (final p in jam.removed)
             ListTile(
-              leading: const Icon(Icons.block),
+              leading: const Icon(PhosphorIconsRegular.prohibit),
               title: Text(p.name),
               trailing: TextButton(onPressed: () => jam.allowRejoin(p.id), child: const Text('Allow rejoin')),
             ),
@@ -328,13 +343,13 @@ class _NowPlayingCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  IconButton(icon: const Icon(Icons.skip_previous), onPressed: jam.previous),
+                  IconButton(icon: const Icon(PhosphorIconsFill.skipBack), onPressed: jam.previous),
                   IconButton(
                     iconSize: 44,
-                    icon: Icon(jam.playing ? Icons.pause_circle_filled : Icons.play_circle_filled),
+                    icon: Icon(jam.playing ? PhosphorIconsFill.pauseCircle : PhosphorIconsFill.playCircle),
                     onPressed: jam.queue.isEmpty ? null : jam.playPause,
                   ),
-                  IconButton(icon: const Icon(Icons.skip_next), onPressed: jam.next),
+                  IconButton(icon: const Icon(PhosphorIconsFill.skipForward), onPressed: jam.next),
                 ],
               )
             else

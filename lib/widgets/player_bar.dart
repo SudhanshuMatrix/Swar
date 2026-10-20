@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_icons.dart';
 import '../core/theme.dart';
 import '../screens/now_playing_screen.dart';
 import '../state/player_provider.dart';
+import 'artist_link.dart';
 import 'track_actions.dart';
 import 'ui.dart';
 
@@ -54,10 +56,11 @@ class PlayerBar extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
                           const SizedBox(height: 2),
-                          Text(track.artist,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: SonivoColors.textSecondary, fontSize: 12)),
+                          ArtistLinks(track.artist,
+                              style: const TextStyle(
+                                  color: SonivoColors.textSecondary,
+                                  fontSize: 12,
+                                  fontFeatures: [FontFeature.tabularFigures()])),
                         ],
                       ),
                     ),
@@ -79,13 +82,13 @@ class PlayerBar extends StatelessWidget {
                     IconButton(
                       iconSize: 20,
                       tooltip: 'Shuffle',
-                      icon: Icon(Icons.shuffle_rounded,
+                      icon: Icon(PhosphorIconsRegular.shuffle,
                           color: player.shuffle ? SonivoColors.accent : SonivoColors.textSecondary),
                       onPressed: player.toggleShuffle,
                     ),
                     IconButton(
                       tooltip: 'Previous',
-                      icon: const Icon(Icons.skip_previous_rounded),
+                      icon: const Icon(PhosphorIconsFill.skipBack),
                       onPressed: player.previous,
                     ),
                     const SizedBox(width: Gaps.xs),
@@ -94,14 +97,16 @@ class PlayerBar extends StatelessWidget {
                     const SizedBox(width: Gaps.xs),
                     IconButton(
                       tooltip: 'Next',
-                      icon: const Icon(Icons.skip_next_rounded),
+                      icon: const Icon(PhosphorIconsFill.skipForward),
                       onPressed: player.next,
                     ),
                     IconButton(
                       iconSize: 20,
                       tooltip: 'Repeat',
                       icon: Icon(
-                        player.repeat == PlaybackRepeatMode.one ? Icons.repeat_one_rounded : Icons.repeat_rounded,
+                        player.repeat == PlaybackRepeatMode.one
+                            ? PhosphorIconsRegular.repeatOnce
+                            : PhosphorIconsRegular.repeat,
                         color:
                             player.repeat == PlaybackRepeatMode.off ? SonivoColors.textSecondary : SonivoColors.accent,
                       ),
@@ -115,7 +120,10 @@ class PlayerBar extends StatelessWidget {
                       width: 44,
                       child: Text(formatDuration(player.position),
                           textAlign: TextAlign.right,
-                          style: const TextStyle(fontSize: 11, color: SonivoColors.textSecondary)),
+                          style: const TextStyle(
+                              fontSize: 11,
+                              color: SonivoColors.textSecondary,
+                              fontFeatures: [FontFeature.tabularFigures()])),
                     ),
                     Expanded(
                       child: SliderTheme(
@@ -136,7 +144,10 @@ class PlayerBar extends StatelessWidget {
                     SizedBox(
                       width: 44,
                       child: Text(formatDuration(player.duration),
-                          style: const TextStyle(fontSize: 11, color: SonivoColors.textSecondary)),
+                          style: const TextStyle(
+                              fontSize: 11,
+                              color: SonivoColors.textSecondary,
+                              fontFeatures: [FontFeature.tabularFigures()])),
                     ),
                   ],
                 ),
@@ -151,17 +162,17 @@ class PlayerBar extends StatelessWidget {
               children: [
                 IconButton(
                   tooltip: 'Queue',
-                  icon: const Icon(Icons.queue_music_rounded, size: 20),
+                  icon: const Icon(PhosphorIconsRegular.playlist, size: 20),
                   onPressed: () => showQueueSheet(context),
                 ),
                 IconButton(
                   tooltip: player.volume == 0 ? 'Unmute' : 'Mute',
                   icon: Icon(
                     player.volume == 0
-                        ? Icons.volume_off_rounded
+                        ? PhosphorIconsRegular.speakerX
                         : player.volume < 0.5
-                            ? Icons.volume_down_rounded
-                            : Icons.volume_up_rounded,
+                            ? PhosphorIconsRegular.speakerLow
+                            : PhosphorIconsRegular.speakerHigh,
                     size: 20,
                   ),
                   onPressed: () => player.setVolume(player.volume == 0 ? 1 : 0),
@@ -179,7 +190,7 @@ class PlayerBar extends StatelessWidget {
                   ),
                 IconButton(
                   tooltip: 'Full screen player',
-                  icon: const Icon(Icons.open_in_full_rounded, size: 18),
+                  icon: const Icon(PhosphorIconsRegular.arrowsOutSimple, size: 18),
                   onPressed: onOpen,
                 ),
               ],

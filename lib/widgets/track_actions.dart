@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_icons.dart';
 import '../models/track.dart';
-import '../services/jam_service.dart';
 import '../state/library_provider.dart';
 import '../state/player_provider.dart';
+import 'artist_link.dart';
+import 'jam_picker.dart';
 
 /// Lets the listener pick one of their playlists for [track].
 Future<void> showAddToPlaylist(BuildContext context, Track track) async {
@@ -30,7 +32,7 @@ Future<void> showAddToPlaylist(BuildContext context, Track track) async {
                 onPressed: () => Navigator.pop(ctx, p.id),
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 child: Row(children: [
-                  const Icon(Icons.queue_music_rounded, size: 20),
+                  const Icon(PhosphorIconsRegular.playlist, size: 20),
                   const SizedBox(width: 12),
                   Expanded(child: Text(p.name)),
                 ]),
@@ -55,11 +57,10 @@ class TrackMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final player = context.read<PlayerProvider>();
     final library = context.watch<LibraryProvider>();
-    final jam = context.watch<JamController>();
     final liked = library.isLiked(track.id);
     return PopupMenuButton<String>(
       tooltip: 'More',
-      icon: const Icon(Icons.more_horiz_rounded),
+      icon: const Icon(PhosphorIconsRegular.dotsThree),
       onSelected: (value) {
         switch (value) {
           case 'play_next':
@@ -73,17 +74,21 @@ class TrackMenu extends StatelessWidget {
           case 'radio':
             player.startRadio(track);
           case 'jam':
-            jam.addTrack(track);
+            addToJam(context, track);
+          case 'artist':
+            openArtistByName(context, track.artist);
         }
       },
       itemBuilder: (_) => [
-        _item('play_next', Icons.playlist_play_rounded, 'Play next'),
-        _item('queue', Icons.queue_rounded, 'Add to queue'),
-        _item('playlist', Icons.playlist_add_rounded, 'Add to playlist'),
+        _item('play_next', PhosphorIconsRegular.playCircle, 'Play next'),
+        _item('queue', PhosphorIconsRegular.queue, 'Add to queue'),
+        _item('playlist', PhosphorIconsRegular.listPlus, 'Add to playlist'),
         if (showLike)
-          _item('like', liked ? Icons.favorite_rounded : Icons.favorite_border_rounded, liked ? 'Unlike' : 'Like'),
-        if (showRadio) _item('radio', Icons.radio_rounded, 'Start radio'),
-        if (jam.inJam && (jam.isAdmin || jam.allowParticipantAdd)) _item('jam', Icons.groups_rounded, 'Add to Jam'),
+          _item('like', liked ? PhosphorIconsFill.heart : PhosphorIconsRegular.heart, liked ? 'Unlike' : 'Like'),
+        if (showRadio) _item('radio', PhosphorIconsRegular.radio, 'Start radio'),
+        _item('jam', PhosphorIconsRegular.usersThree, 'Add to Jam'),
+        if (track.artist.isNotEmpty && !track.isDeepSearchResult)
+          _item('artist', PhosphorIconsRegular.user, 'Go to artist'),
       ],
     );
   }
@@ -107,7 +112,7 @@ class LikeButton extends StatelessWidget {
     return IconButton(
       tooltip: liked ? 'Unlike' : 'Like',
       iconSize: size,
-      icon: Icon(liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+      icon: Icon(liked ? PhosphorIconsFill.heart : PhosphorIconsRegular.heart,
           color: liked ? Theme.of(context).colorScheme.tertiary : null),
       onPressed: () => library.toggleLiked(track),
     );

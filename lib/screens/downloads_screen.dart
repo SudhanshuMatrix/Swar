@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_icons.dart';
 import '../core/errors.dart';
 import '../core/theme.dart';
 import '../services/download_service.dart';
@@ -32,7 +33,7 @@ class DownloadsScreen extends StatelessWidget {
           if (ready.isNotEmpty)
             IconButton(
               tooltip: 'Play all offline',
-              icon: const Icon(Icons.play_circle_fill, color: SonivoColors.accent),
+              icon: const Icon(PhosphorIconsFill.playCircle, color: SonivoColors.accent),
               onPressed: () => player.playQueue(ready, 0),
             ),
         ],
@@ -42,7 +43,7 @@ class DownloadsScreen extends StatelessWidget {
           : Column(
               children: [
                 ListTile(
-                  leading: const Icon(Icons.sd_storage_outlined),
+                  leading: const Icon(PhosphorIconsRegular.hardDrives),
                   title: Text('${downloads.completedCount} songs offline'),
                   subtitle: Text('${formatBytes(downloads.bytesUsed)} used on this device'),
                 ),
@@ -122,25 +123,27 @@ class _DownloadTile extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (active)
-                IconButton(tooltip: 'Pause', icon: const Icon(Icons.pause), onPressed: () => downloads.pause(id)),
+                IconButton(
+                    tooltip: 'Pause', icon: const Icon(PhosphorIconsFill.pause), onPressed: () => downloads.pause(id)),
               if (item.status == DownloadStatus.paused)
                 IconButton(
                   tooltip: 'Resume',
-                  icon: const Icon(Icons.play_arrow),
+                  icon: const Icon(PhosphorIconsFill.play),
                   onPressed: () => _run(context, () => downloads.resume(id)),
                 ),
               if (item.status == DownloadStatus.failed || item.status == DownloadStatus.canceled)
                 IconButton(
                   tooltip: 'Retry',
-                  icon: const Icon(Icons.refresh),
+                  icon: const Icon(PhosphorIconsRegular.arrowClockwise),
                   onPressed: () => _run(context, () => downloads.download(item.track)),
                 ),
               if (active || item.status == DownloadStatus.paused)
-                IconButton(tooltip: 'Cancel', icon: const Icon(Icons.close), onPressed: () => downloads.cancel(id)),
+                IconButton(
+                    tooltip: 'Cancel', icon: const Icon(PhosphorIconsRegular.x), onPressed: () => downloads.cancel(id)),
               if (!active && item.status != DownloadStatus.paused)
                 IconButton(
                   tooltip: 'Delete',
-                  icon: const Icon(Icons.delete_outline),
+                  icon: const Icon(PhosphorIconsRegular.trash),
                   onPressed: () => downloads.remove(id),
                 ),
             ],

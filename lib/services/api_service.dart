@@ -255,6 +255,16 @@ class ApiService {
     return OnlineArtist.fromJson(data as Map<String, dynamic>);
   }
 
+  /// One page of an artist's songs, most popular first, with the total the
+  /// catalog reports for the artist.
+  Future<({List<Track> tracks, int total})> artistSongs(String id, {int page = 0}) async {
+    final data =
+        await _public('GET', '/v1/artists/${Uri.encodeComponent(id)}/songs?page=$page') as Map<String, dynamic>;
+    final tracks =
+        ((data['results'] as List?) ?? const []).whereType<Map<String, dynamic>>().map(Track.fromJson).toList();
+    return (tracks: tracks, total: (data['total'] as num?)?.toInt() ?? 0);
+  }
+
   Future<OnlinePlaylist> playlist(String id, {int limit = 100}) async {
     final data = await _public('GET', '/v1/playlists/${Uri.encodeComponent(id)}?limit=$limit');
     return OnlinePlaylist.fromJson(data as Map<String, dynamic>);

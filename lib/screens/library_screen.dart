@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_icons.dart';
 import '../core/theme.dart';
 import '../models/playlist.dart';
 import '../services/download_service.dart';
@@ -100,7 +101,7 @@ class LibraryScreen extends StatelessWidget {
                     child: Text('Your Library', style: Theme.of(context).textTheme.headlineMedium),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.add, size: 28),
+                    icon: const Icon(PhosphorIconsRegular.plus, size: 28),
                     tooltip: 'Create Playlist',
                     onPressed: () => _createPlaylist(context),
                   ),
@@ -113,7 +114,7 @@ class LibraryScreen extends StatelessWidget {
                   ListTile(
                     leading: const CircleAvatar(
                       backgroundColor: SonivoColors.accent,
-                      child: Icon(Icons.favorite, color: SonivoColors.onAccent),
+                      child: Icon(PhosphorIconsFill.heart, color: SonivoColors.onAccent),
                     ),
                     title: const Text('Liked Songs', style: TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
@@ -127,7 +128,7 @@ class LibraryScreen extends StatelessWidget {
                   ListTile(
                     leading: const CircleAvatar(
                       backgroundColor: SonivoColors.surfaceHigh,
-                      child: Icon(Icons.download_done, color: SonivoColors.accent),
+                      child: Icon(PhosphorIconsFill.checkCircle, color: SonivoColors.accent),
                     ),
                     title: const Text('Offline downloads', style: TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
@@ -141,7 +142,7 @@ class LibraryScreen extends StatelessWidget {
                     (p) => ListTile(
                       leading: const CircleAvatar(
                         backgroundColor: SonivoColors.surfaceHigh,
-                        child: Icon(Icons.queue_music, color: SonivoColors.textSecondary),
+                        child: Icon(PhosphorIconsRegular.playlist, color: SonivoColors.textSecondary),
                       ),
                       title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600)),
                       subtitle: Text(
@@ -152,7 +153,7 @@ class LibraryScreen extends StatelessWidget {
                         builder: (_) => PlaylistScreen(title: p.name, tracks: p.tracks, playlistId: p.id),
                       )),
                       trailing: PopupMenuButton<String>(
-                        icon: const Icon(Icons.more_vert, size: 20),
+                        icon: const Icon(PhosphorIconsRegular.dotsThreeVertical, size: 20),
                         onSelected: (action) {
                           if (action == 'play' && p.tracks.isNotEmpty) {
                             player.playQueue(p.tracks, 0);

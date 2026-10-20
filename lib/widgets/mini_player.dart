@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_icons.dart';
 import '../core/theme.dart';
 import '../state/player_provider.dart';
 import 'ui.dart';
@@ -61,7 +62,7 @@ class MiniPlayer extends StatelessWidget {
                     ),
                     IconButton(
                       tooltip: 'Next',
-                      icon: const Icon(Icons.skip_next_rounded),
+                      icon: const Icon(PhosphorIconsFill.skipForward),
                       onPressed: player.next,
                     ),
                   ],

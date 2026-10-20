@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_icons.dart';
 import '../core/errors.dart';
 import '../core/theme.dart';
 import '../models/online_playlist.dart';
 import '../models/track.dart';
 import '../services/api_service.dart';
 import '../state/player_provider.dart';
+import '../widgets/track_actions.dart';
 import '../widgets/track_tile.dart';
 import '../widgets/ui.dart';
 
@@ -61,7 +63,7 @@ class _OnlinePlaylistScreenState extends State<OnlinePlaylistScreen> {
               padding: EdgeInsets.fromLTRB(Gaps.pagePadding(context), Gaps.sm, Gaps.pagePadding(context), Gaps.lg),
               child: Row(
                 children: [
-                  Artwork(url: p.imageUrl, size: 140, radius: Gaps.radiusLg, icon: Icons.queue_music_rounded),
+                  Artwork(url: p.imageUrl, size: 140, radius: Gaps.radiusLg, icon: PhosphorIconsRegular.playlist),
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(
@@ -76,7 +78,7 @@ class _OnlinePlaylistScreenState extends State<OnlinePlaylistScreen> {
                         const SizedBox(height: 8),
                         FilledButton.icon(
                           onPressed: _tracks.isEmpty ? null : () => player.playQueue(_tracks, 0),
-                          icon: const Icon(Icons.play_arrow),
+                          icon: const Icon(PhosphorIconsFill.play),
                           label: const Text('Play all'),
                         ),
                       ],
@@ -97,7 +99,8 @@ class _OnlinePlaylistScreenState extends State<OnlinePlaylistScreen> {
                 ),
               ),
             for (var i = 0; i < _tracks.length; i++)
-              TrackTile(track: _tracks[i], onTap: () => player.playQueue(_tracks, i)),
+              TrackTile(
+                  track: _tracks[i], onTap: () => player.playQueue(_tracks, i), trailing: TrackMenu(track: _tracks[i])),
           ],
         ),
       ),

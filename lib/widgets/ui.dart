@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../core/app_icons.dart';
 import '../core/theme.dart';
 
 /// Rounded cover art with a branded placeholder while it loads or when a
@@ -17,7 +18,7 @@ class Artwork extends StatelessWidget {
     required this.url,
     this.size = 48,
     this.radius = Gaps.radiusSm,
-    this.icon = Icons.music_note_rounded,
+    this.icon = PhosphorIconsRegular.musicNote,
     this.circle = false,
   });
 
@@ -143,7 +144,7 @@ class GradientPlayButton extends StatelessWidget {
                       height: size * 0.4,
                       child: const CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
                     )
-                  : Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  : Icon(playing ? PhosphorIconsFill.pause : PhosphorIconsFill.play,
                       color: Colors.white, size: size * 0.55),
             ),
           ),

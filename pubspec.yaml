@@ -25,7 +25,6 @@ dependencies:
   just_audio_media_kit: ^2.1.0
   media_kit_libs_linux: ^1.2.1
   media_kit_libs_windows_audio: ^1.0.9
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -49,3 +48,12 @@ flutter:
           weight: 700
         - asset: assets/fonts/Inter-ExtraBold.otf
           weight: 800
+    - family: PhosphorRegular
+      fonts:
+        - asset: assets/fonts/Phosphor-Regular.ttf
+    - family: PhosphorFill
+      fonts:
+        - asset: assets/fonts/Phosphor-Fill.ttf
+    - family: PhosphorBold
+      fonts:
+        - asset: assets/fonts/Phosphor-Bold.ttf

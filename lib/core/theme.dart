@@ -62,6 +62,30 @@ class Gaps {
 class SonivoTheme {
   static const fontFamily = 'Inter';
 
+  /// One type scale for the whole app: tight, heavy headings and calm,
+  /// readable body text. Numbers line up (tabular) wherever times show.
+  static const _scale = TextTheme(
+    displayLarge: TextStyle(fontSize: 48, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -1.6),
+    displayMedium: TextStyle(fontSize: 40, height: 1.1, fontWeight: FontWeight.w800, letterSpacing: -1.2),
+    displaySmall: TextStyle(fontSize: 34, height: 1.15, fontWeight: FontWeight.w800, letterSpacing: -1.0),
+    headlineLarge: TextStyle(fontSize: 32, height: 1.15, fontWeight: FontWeight.w800, letterSpacing: -0.9),
+    headlineMedium: TextStyle(fontSize: 28, height: 1.2, fontWeight: FontWeight.w800, letterSpacing: -0.7),
+    headlineSmall: TextStyle(fontSize: 24, height: 1.2, fontWeight: FontWeight.w700, letterSpacing: -0.5),
+    titleLarge: TextStyle(fontSize: 20, height: 1.25, fontWeight: FontWeight.w700, letterSpacing: -0.3),
+    titleMedium: TextStyle(fontSize: 16, height: 1.3, fontWeight: FontWeight.w600, letterSpacing: -0.1),
+    titleSmall: TextStyle(fontSize: 14, height: 1.3, fontWeight: FontWeight.w600),
+    bodyLarge: TextStyle(fontSize: 16, height: 1.45, fontWeight: FontWeight.w400),
+    bodyMedium: TextStyle(fontSize: 14, height: 1.45, fontWeight: FontWeight.w400),
+    bodySmall: TextStyle(fontSize: 13, height: 1.4, fontWeight: FontWeight.w400, color: SonivoColors.textSecondary),
+    labelLarge: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, letterSpacing: 0.1),
+    labelMedium: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.2),
+    labelSmall: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2),
+  );
+
+  static final typeScale = _scale
+      .apply(bodyColor: SonivoColors.textPrimary, displayColor: SonivoColors.textPrimary, fontFamily: fontFamily)
+      .copyWith(bodySmall: _scale.bodySmall!.copyWith(fontFamily: fontFamily));
+
   static ThemeData get dark {
     const scheme = ColorScheme(
       brightness: Brightness.dark,
@@ -97,11 +121,6 @@ class SonivoTheme {
       visualDensity: VisualDensity.standard,
     );
 
-    final text = base.textTheme.apply(
-      bodyColor: SonivoColors.textPrimary,
-      displayColor: SonivoColors.textPrimary,
-    );
-
     final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(Gaps.radius));
 
     return base.copyWith(
@@ -110,16 +129,7 @@ class SonivoTheme {
       primaryColor: SonivoColors.accent,
       dividerColor: SonivoColors.outline,
       splashFactory: InkSparkle.splashFactory,
-      textTheme: text.copyWith(
-        headlineLarge: text.headlineLarge?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.8),
-        headlineMedium: text.headlineMedium?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.6),
-        headlineSmall: text.headlineSmall?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.4),
-        titleLarge: text.titleLarge?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.3),
-        titleMedium: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-        bodyMedium: text.bodyMedium?.copyWith(color: SonivoColors.textPrimary),
-        bodySmall: text.bodySmall?.copyWith(color: SonivoColors.textSecondary),
-        labelLarge: text.labelLarge?.copyWith(fontWeight: FontWeight.w600),
-      ),
+      textTheme: typeScale,
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,

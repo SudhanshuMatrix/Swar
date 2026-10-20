@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_icons.dart';
 import '../core/theme.dart';
 import '../models/track.dart';
 import '../state/library_provider.dart';
 import '../state/player_provider.dart';
+import '../widgets/artist_link.dart';
+import '../widgets/jam_picker.dart';
 import '../widgets/track_tile.dart';
 import '../widgets/ui.dart';
 
@@ -100,7 +103,7 @@ class PlaylistScreen extends StatelessWidget {
         actions: [
           if (!isLikedSongs && playlistId != null)
             IconButton(
-              icon: const Icon(Icons.delete_outline_rounded),
+              icon: const Icon(PhosphorIconsRegular.trash),
               tooltip: 'Delete playlist',
               onPressed: () => _deletePlaylist(context),
             ),
@@ -108,7 +111,7 @@ class PlaylistScreen extends StatelessWidget {
       ),
       body: tracks.isEmpty
           ? EmptyState(
-              icon: isLikedSongs ? Icons.favorite_border_rounded : Icons.music_note_rounded,
+              icon: isLikedSongs ? PhosphorIconsRegular.heart : PhosphorIconsRegular.musicNote,
               title: isLikedSongs ? 'No liked songs yet' : '$title is empty',
               message: 'Search for songs and add them here.',
             )
@@ -130,7 +133,7 @@ class PlaylistScreen extends StatelessWidget {
                                   ? const LinearGradient(colors: [SonivoColors.rose, SonivoColors.violet])
                                   : SonivoColors.brandGradient,
                             ),
-                            child: Icon(isLikedSongs ? Icons.favorite_rounded : Icons.queue_music_rounded,
+                            child: Icon(isLikedSongs ? PhosphorIconsFill.heart : PhosphorIconsRegular.playlist,
                                 size: 56, color: Colors.white),
                           ),
                           const SizedBox(width: Gaps.lg),
@@ -162,7 +165,7 @@ class PlaylistScreen extends StatelessWidget {
                                     const SizedBox(width: Gaps.sm),
                                     IconButton.filledTonal(
                                       tooltip: 'Shuffle',
-                                      icon: const Icon(Icons.shuffle_rounded),
+                                      icon: const Icon(PhosphorIconsRegular.shuffle),
                                       onPressed: () {
                                         final shuffled = List<Track>.of(tracks)..shuffle();
                                         player.playQueue(shuffled, 0);
@@ -186,12 +189,14 @@ class PlaylistScreen extends StatelessWidget {
                           track: t,
                           onTap: () => player.playQueue(tracks, i),
                           trailing: PopupMenuButton<String>(
-                            icon: const Icon(Icons.more_vert),
+                            icon: const Icon(PhosphorIconsRegular.dotsThreeVertical),
                             onSelected: (action) {
                               if (action == 'play_next') player.playNext(t);
                               if (action == 'queue') player.addToQueue(t);
                               if (action == 'like') library.toggleLiked(t);
                               if (action == 'add_playlist') _addToAnotherPlaylistDialog(context, t);
+                              if (action == 'jam') addToJam(context, t);
+                              if (action == 'artist') openArtistByName(context, t.artist);
                               if (action == 'remove' && playlistId != null) {
                                 library.removeFromPlaylist(playlistId!, t.id);
                               }
@@ -201,6 +206,9 @@ class PlaylistScreen extends StatelessWidget {
                               const PopupMenuItem(value: 'queue', child: Text('Add to queue')),
                               PopupMenuItem(value: 'like', child: Text(isLiked ? 'Unlike' : 'Like')),
                               const PopupMenuItem(value: 'add_playlist', child: Text('Add to other playlist')),
+                              const PopupMenuItem(value: 'jam', child: Text('Add to Jam')),
+                              if (t.artist.isNotEmpty && !t.isDeepSearchResult)
+                                const PopupMenuItem(value: 'artist', child: Text('Go to artist')),
                               if (playlistId != null)
                                 const PopupMenuItem(
                                   value: 'remove',

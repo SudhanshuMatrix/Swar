@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_icons.dart';
 import '../core/errors.dart';
 import '../core/theme.dart';
 import '../models/track.dart';
@@ -61,7 +62,7 @@ class TrackTile extends StatelessWidget {
                           color: Colors.black.withOpacity(0.45),
                           borderRadius: BorderRadius.circular(Gaps.radiusSm),
                         ),
-                        child: const Icon(Icons.graphic_eq_rounded, color: SonivoColors.accent),
+                        child: const Icon(PhosphorIconsRegular.waveform, color: SonivoColors.accent),
                       ),
                   ],
                 ),
@@ -85,7 +86,10 @@ class TrackTile extends StatelessWidget {
                         track.artist.isEmpty ? 'Unknown artist' : track.artist,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13, color: SonivoColors.textSecondary),
+                        style: const TextStyle(
+                            fontSize: 13,
+                            color: SonivoColors.textSecondary,
+                            fontFeatures: [FontFeature.tabularFigures()]),
                       ),
                     ],
                   ),
@@ -98,7 +102,10 @@ class TrackTile extends StatelessWidget {
                         track.album,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13, color: SonivoColors.textSecondary),
+                        style: const TextStyle(
+                            fontSize: 13,
+                            color: SonivoColors.textSecondary,
+                            fontFeatures: [FontFeature.tabularFigures()]),
                       ),
                     ),
                   ),
@@ -108,7 +115,8 @@ class TrackTile extends StatelessWidget {
                     child: Text(
                       _fmt(track.duration),
                       textAlign: TextAlign.right,
-                      style: const TextStyle(fontSize: 13, color: SonivoColors.textMuted),
+                      style: const TextStyle(
+                          fontSize: 13, color: SonivoColors.textMuted, fontFeatures: [FontFeature.tabularFigures()]),
                     ),
                   ),
                 if (showDownload) DownloadButton(track: track),
@@ -139,7 +147,7 @@ class DownloadButton extends StatelessWidget {
       case DownloadStatus.completed:
         return const Padding(
           padding: EdgeInsets.all(12),
-          child: Icon(Icons.download_done_rounded, color: SonivoColors.accent, size: 22),
+          child: Icon(PhosphorIconsFill.checkCircle, color: SonivoColors.accent, size: 22),
         );
       case DownloadStatus.queued:
       case DownloadStatus.downloading:
@@ -160,13 +168,13 @@ class DownloadButton extends StatelessWidget {
       case DownloadStatus.paused:
         return IconButton(
           tooltip: 'Resume download',
-          icon: const Icon(Icons.play_for_work, color: SonivoColors.textSecondary),
+          icon: const Icon(PhosphorIconsRegular.downloadSimple, color: SonivoColors.textSecondary),
           onPressed: () => _run(context, () => downloads.resume(track.id)),
         );
       default:
         return IconButton(
           tooltip: 'Download',
-          icon: const Icon(Icons.download_rounded, color: SonivoColors.textSecondary),
+          icon: const Icon(PhosphorIconsRegular.downloadSimple, color: SonivoColors.textSecondary),
           onPressed: () => _run(context, () => downloads.download(track)),
         );
     }

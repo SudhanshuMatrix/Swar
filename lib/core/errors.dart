@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'app_icons.dart';
 import '../services/api_service.dart';
 import 'theme.dart';
 
@@ -75,7 +76,7 @@ class ErrorPopup {
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.error_outline, color: SonivoColors.danger, size: 36),
+          icon: const Icon(PhosphorIconsRegular.warningCircle, color: SonivoColors.danger, size: 36),
           title: Text(title, textAlign: TextAlign.center),
           content: Text(friendlyError(error), textAlign: TextAlign.center),
           actionsAlignment: MainAxisAlignment.center,
