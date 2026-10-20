@@ -30,6 +30,11 @@ jobs:
           fi
           cat .env
 
+      # android/ is mostly gitignored (made by `make setup`), so generate the
+      # missing scaffolding. Files already in the repo are kept as they are.
+      - name: Generate Android project files
+        run: flutter create --platforms=android --org com.sonivo --project-name sonivo .
+
       - run: flutter pub get
       - run: flutter build apk --release
 
