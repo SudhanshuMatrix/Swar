@@ -81,6 +81,9 @@ class DownloadService extends ChangeNotifier {
 
   bool get supported => !kIsWeb;
 
+  DownloadStatus? statusOf(String trackId) => _items[trackId]?.status;
+  double progressOf(String trackId) => _items[trackId]?.progress ?? 0;
+
   Future<void> init() async {
     if (!supported) return;
     _box = await Hive.openBox(_boxName);

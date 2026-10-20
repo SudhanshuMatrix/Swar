@@ -206,7 +206,7 @@ class _HomeTab extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'Stream any song or music video directly with background audio support and offline playlists.',
+                        'Stream any song directly with background audio support and offline playlists.',
                         style: TextStyle(color: SonivoColors.textSecondary, fontSize: 14),
                       ),
                       const SizedBox(height: 16),

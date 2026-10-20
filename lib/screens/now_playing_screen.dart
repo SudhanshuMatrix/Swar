@@ -1,13 +1,11 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:video_player/video_player.dart';
 
 import '../core/theme.dart';
 import '../models/track.dart';
 import '../state/library_provider.dart';
 import '../state/player_provider.dart';
-import '../widgets/audio_video_switch.dart';
 
 class NowPlayingScreen extends StatelessWidget {
   const NowPlayingScreen({super.key});
@@ -203,8 +201,6 @@ class NowPlayingScreen extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
           child: Column(
             children: [
-              AudioVideoSwitch(mode: player.mode, onChanged: (_) => player.toggleMode()),
-              const SizedBox(height: 16),
               if (player.errorMessage != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -217,11 +213,7 @@ class NowPlayingScreen extends StatelessWidget {
               Expanded(
                 child: Center(
                   child: AspectRatio(
-                    aspectRatio: (player.mode == PlaybackMode.video &&
-                            player.videoController != null &&
-                            player.videoController!.value.isInitialized)
-                        ? player.videoController!.value.aspectRatio
-                        : 1,
+                    aspectRatio: 1,
                     child: Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
@@ -345,13 +337,6 @@ class NowPlayingScreen extends StatelessWidget {
   }
 
   Widget _buildArt(PlayerProvider player, Track track) {
-    if (player.mode == PlaybackMode.video) {
-      final c = player.videoController;
-      if (c != null && c.value.isInitialized) {
-        return VideoPlayer(c);
-      }
-      return const ColoredBox(color: Colors.black, child: Center(child: CircularProgressIndicator()));
-    }
     if (track.thumbnailUrl.isNotEmpty) {
       return CachedNetworkImage(
         imageUrl: track.thumbnailUrl,

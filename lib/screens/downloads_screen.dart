@@ -115,6 +115,7 @@ class _DownloadTile extends StatelessWidget {
       children: [
         TrackTile(
           track: item.track,
+          showDownload: false,
           onTap: () {
             if (item.status == DownloadStatus.completed) player.playSingle(item.track);
           },

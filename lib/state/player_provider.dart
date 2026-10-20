@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
-import 'package:video_player/video_player.dart';
 
 import '../models/track.dart';
 import '../services/api_service.dart';
@@ -11,19 +10,13 @@ import '../services/download_service.dart';
 import '../services/jam_service.dart';
 import '../services/library_service.dart';
 
-enum PlaybackMode { audio, video }
-
 enum PlaybackRepeatMode { off, all, one }
 
 /// Owns the queue and drives playback.
 ///
 /// The background-capable [SonivoAudioHandler] (just_audio + audio_service)
-/// is *always* the single source of truth for position/duration/playing —
-/// in both Audio and Video mode. Video mode just overlays a muted,
-/// position-synced [VideoPlayerController] on top of it, because modern
-/// YouTube almost never serves one combined audio+video stream any more
-/// (see backend/main.go). This also means audio keeps playing in the
-/// background even if the screen closes while watching a video.
+/// is the single source of truth for position/duration/playing, so audio
+/// keeps playing in the background when the screen closes.
 class PlayerProvider extends ChangeNotifier {
   final ApiService api;
   final SonivoAudioHandler audioHandler;
@@ -39,17 +32,21 @@ class PlayerProvider extends ChangeNotifier {
     audioHandler.onSkipToPrevious = previous;
 
     audioHandler.playbackState.listen((state) {
+      final changed = state.playing != _playing;
       _playing = state.playing;
-      _syncVideoPlayPause();
       if (state.processingState == AudioProcessingState.completed) {
         _onTrackFinished();
       }
-      notifyListeners();
+      if (changed) notifyListeners();
     });
+    // Position ticks very often; redrawing every listener on each one makes
+    // taps (like play/pause) feel slow, so only notify a few times a second.
     audioHandler.player.positionStream.listen((pos) {
       _position = pos;
-      _syncVideoPosition();
-      notifyListeners();
+      if ((pos - _lastNotifiedPosition).abs() >= const Duration(milliseconds: 250)) {
+        _lastNotifiedPosition = pos;
+        notifyListeners();
+      }
     });
     audioHandler.player.durationStream.listen((d) {
       if (d != null) _duration = d;
@@ -59,10 +56,10 @@ class PlayerProvider extends ChangeNotifier {
 
   List<Track> _queue = [];
   int _queueIndex = -1;
-  PlaybackMode _mode = PlaybackMode.audio;
   bool _playing = false;
   bool _loading = false;
   Duration _position = Duration.zero;
+  Duration _lastNotifiedPosition = Duration.zero;
   Duration _duration = Duration.zero;
   bool _shuffle = false;
   PlaybackRepeatMode _repeat = PlaybackRepeatMode.off;
@@ -72,12 +69,9 @@ class PlayerProvider extends ChangeNotifier {
   String? _radioStationId;
   String? _radioLabel;
 
-  VideoPlayerController? _videoController;
-
   Track? get currentTrack => (_queueIndex >= 0 && _queueIndex < _queue.length) ? _queue[_queueIndex] : null;
   List<Track> get queue => List.unmodifiable(_queue);
   int get queueIndex => _queueIndex;
-  PlaybackMode get mode => _mode;
   bool get playing => _playing;
   bool get loading => _loading;
   Duration get position => _position;
@@ -90,7 +84,6 @@ class PlayerProvider extends ChangeNotifier {
 
   /// Label of the radio station feeding the queue, if any.
   String? get radioLabel => _radioLabel;
-  VideoPlayerController? get videoController => _videoController;
 
   void toggleAutoPlayRelated() {
     _autoPlayRelated = !_autoPlayRelated;
@@ -136,7 +129,6 @@ class PlayerProvider extends ChangeNotifier {
         _queue.clear();
         _queueIndex = -1;
         audioHandler.stop();
-        _disposeVideo();
         notifyListeners();
         return;
       }
@@ -199,7 +191,6 @@ class PlayerProvider extends ChangeNotifier {
   Future<void> _loadCurrent({required bool autoplay}) async {
     final track = currentTrack;
     if (track == null) return;
-    await _disposeVideo();
     _loading = true;
     _errorMessage = null;
     _position = Duration.zero;
@@ -214,9 +205,6 @@ class PlayerProvider extends ChangeNotifier {
       }
       if (autoplay) await audioHandler.play();
       _prefetchUpcoming();
-      if (_mode == PlaybackMode.video) {
-        await _attachVideoLayer(track.id, resumeAt: Duration.zero, autoplay: autoplay);
-      }
       await LibraryService.instance.addRecent(track);
     } catch (e) {
       _errorMessage = 'Could not play "${track.title}": $e';
@@ -226,83 +214,28 @@ class PlayerProvider extends ChangeNotifier {
     }
   }
 
-  /// Resolves the video-only stream and plays it muted, in sync with
-  /// whatever the audio engine is already doing.
-  Future<void> _attachVideoLayer(String videoId, {required Duration resumeAt, required bool autoplay}) async {
-    final stream = await api.resolveVideo(videoId);
-    await _disposeVideo();
-    final controller = VideoPlayerController.networkUrl(Uri.parse(stream.videoUrl));
-    await controller.initialize();
-    await controller.setVolume(0);
-    await controller.seekTo(resumeAt);
-    _videoController = controller;
-    if (autoplay) await controller.play();
-    notifyListeners();
-  }
-
-  Future<void> _disposeVideo() async {
-    final c = _videoController;
-    _videoController = null;
-    if (c != null) {
-      await c.dispose();
-    }
-  }
-
-  void _syncVideoPosition() {
-    final c = _videoController;
-    if (c == null || !c.value.isInitialized) return;
-    final drift = (_position - c.value.position).abs();
-    if (drift > const Duration(milliseconds: 400)) {
-      c.seekTo(_position);
-    }
-  }
-
-  void _syncVideoPlayPause() {
-    final c = _videoController;
-    if (c == null || !c.value.isInitialized) return;
-    if (_playing && !c.value.isPlaying) {
-      c.play();
-    } else if (!_playing && c.value.isPlaying) {
-      c.pause();
-    }
-  }
-
-  /// Switches between Audio and Video for the current track — the
-  /// YT-Music-style tab switch. Audio playback is never interrupted; this
-  /// only attaches/detaches the muted visual layer.
-  Future<void> toggleMode() async {
-    final track = currentTrack;
-    if (track == null) return;
-    _errorMessage = null;
-    if (_mode == PlaybackMode.video) {
-      _mode = PlaybackMode.audio;
-      await _disposeVideo();
-      notifyListeners();
-      return;
-    }
-
-    _mode = PlaybackMode.video;
-    _loading = true;
+  /// Flips the button right away, then tells the audio engine. just_audio's
+  /// play() only completes when playback stops, so it is not awaited.
+  Future<void> playPause() async {
+    final wasPlaying = _playing;
+    _playing = !wasPlaying;
     notifyListeners();
     try {
-      await _attachVideoLayer(track.id, resumeAt: _position, autoplay: _playing);
-    } catch (e) {
-      _errorMessage = 'Could not load video: $e';
-      _mode = PlaybackMode.audio;
-    } finally {
-      _loading = false;
+      if (wasPlaying) {
+        await audioHandler.pause();
+      } else {
+        unawaited(audioHandler.play());
+      }
+    } catch (_) {
+      _playing = wasPlaying;
       notifyListeners();
     }
-  }
-
-  Future<void> playPause() async {
-    _playing ? await audioHandler.pause() : await audioHandler.play();
   }
 
   Future<void> seek(Duration pos) async {
     await audioHandler.player.seek(pos);
     _position = pos;
-    await _videoController?.seekTo(pos);
+    _lastNotifiedPosition = pos;
     notifyListeners();
   }
 
@@ -427,9 +360,4 @@ class PlayerProvider extends ChangeNotifier {
     await next();
   }
 
-  @override
-  void dispose() {
-    _disposeVideo();
-    super.dispose();
-  }
 }

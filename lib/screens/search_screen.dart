@@ -1,15 +1,17 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/theme.dart';
+import '../models/online_playlist.dart';
 import '../models/track.dart';
 import '../services/api_service.dart';
-import '../services/download_service.dart';
 import '../services/jam_service.dart';
 import '../state/library_provider.dart';
 import '../state/player_provider.dart';
 import '../widgets/track_tile.dart';
 import 'deep_search_screen.dart';
+import 'online_playlist_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -21,6 +23,7 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   final _controller = TextEditingController();
   List<Track> _results = [];
+  List<OnlinePlaylist> _playlists = [];
   bool _loading = false;
   bool _searched = false;
   String? _error;
@@ -49,7 +52,10 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _search(String query) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) {
-      setState(() => _results = []);
+      setState(() {
+        _results = [];
+        _playlists = [];
+      });
       return;
     }
     setState(() {
@@ -58,10 +64,14 @@ class _SearchScreenState extends State<SearchScreen> {
     });
     try {
       final api = context.read<ApiService>();
+      // Playlists are a bonus: if that search fails, songs still show.
+      final playlistsFuture = api.searchPlaylists(trimmed).catchError((_) => <OnlinePlaylist>[]);
       final results = await api.search(trimmed);
+      final playlists = await playlistsFuture;
       if (!mounted) return;
       setState(() {
         _results = results;
+        _playlists = playlists;
         _searched = true;
       });
     } catch (e) {
@@ -113,16 +123,6 @@ class _SearchScreenState extends State<SearchScreen> {
     ));
   }
 
-  Future<void> _download(Track t) async {
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await context.read<DownloadService>().download(t);
-      messenger.showSnackBar(SnackBar(content: Text('Downloading "${t.title}"')));
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('$e')));
-    }
-  }
-
   void _selectGenre(String genre) {
     _controller.text = genre;
     _search(genre);
@@ -144,7 +144,7 @@ class _SearchScreenState extends State<SearchScreen> {
               onSubmitted: _search,
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
-                hintText: 'Search songs, artists or albums',
+                hintText: 'Search songs, artists or playlists',
                 hintStyle: const TextStyle(color: SonivoColors.textSecondary, fontSize: 14),
                 prefixIcon: const Icon(Icons.search, color: Colors.white70),
                 filled: true,
@@ -158,6 +158,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           _controller.clear();
                           setState(() {
                             _results = [];
+                            _playlists = [];
                             _searched = false;
                             _error = null;
                           });
@@ -166,8 +167,11 @@ class _SearchScreenState extends State<SearchScreen> {
                     : null,
               ),
               onChanged: (text) {
-                if (text.isEmpty && _results.isNotEmpty) {
-                  setState(() => _results = []);
+                if (text.isEmpty && (_results.isNotEmpty || _playlists.isNotEmpty)) {
+                  setState(() {
+                    _results = [];
+                    _playlists = [];
+                  });
                 }
               },
             ),
@@ -192,7 +196,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
               ),
             ),
-          if (_searched && _results.isEmpty && !_loading)
+          if (_searched && _results.isEmpty && _playlists.isEmpty && !_loading)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Text('No results for "${_controller.text.trim()}".',
@@ -200,11 +204,13 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           if (_searched && !_loading) _DeepSearchPrompt(onTap: _openDeepSearch),
           Expanded(
-            child: _results.isEmpty && !_loading
+            child: _results.isEmpty && _playlists.isEmpty && !_loading
                 ? _buildBrowseGenres()
                 : ListView.builder(
-                    itemCount: _results.length,
-                    itemBuilder: (context, i) {
+                    itemCount: _results.length + (_playlists.isEmpty ? 0 : 1),
+                    itemBuilder: (context, index) {
+                      if (_playlists.isNotEmpty && index == 0) return _PlaylistRow(playlists: _playlists);
+                      final i = _playlists.isEmpty ? index : index - 1;
                       final t = _results[i];
                       final jam = context.read<JamController>();
                       final isLiked = library.isLiked(t.id);
@@ -219,7 +225,6 @@ class _SearchScreenState extends State<SearchScreen> {
                             if (value == 'like') library.toggleLiked(t);
                             if (value == 'playlist') _addToPlaylistDialog(t);
                             if (value == 'radio') player.startRadio(t);
-                            if (value == 'download') _download(t);
                             if (value == 'jam') jam.addTrack(t);
                           },
                           itemBuilder: (_) => [
@@ -228,7 +233,6 @@ class _SearchScreenState extends State<SearchScreen> {
                             const PopupMenuItem(value: 'playlist', child: Text('Add to playlist')),
                             PopupMenuItem(value: 'like', child: Text(isLiked ? 'Unlike' : 'Like')),
                             const PopupMenuItem(value: 'radio', child: Text('Start radio')),
-                            if (t.downloadable) const PopupMenuItem(value: 'download', child: Text('Download')),
                             if (jam.inJam && (jam.isAdmin || jam.allowParticipantAdd))
                               const PopupMenuItem(value: 'jam', child: Text('Add to Jam')),
                           ],
@@ -327,4 +331,78 @@ class _DeepSearchPrompt extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Horizontal row of matching playlists above the song results.
+class _PlaylistRow extends StatelessWidget {
+  final List<OnlinePlaylist> playlists;
+  const _PlaylistRow({required this.playlists});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Text('Playlists', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        ),
+        SizedBox(
+          height: 190,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: playlists.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, i) {
+              final p = playlists[i];
+              return GestureDetector(
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => OnlinePlaylistScreen(playlist: p),
+                )),
+                child: SizedBox(
+                  width: 130,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: p.imageUrl.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: p.imageUrl,
+                                width: 130,
+                                height: 130,
+                                fit: BoxFit.cover,
+                                errorWidget: (_, __, ___) => _placeholder(),
+                                placeholder: (_, __) => _placeholder(),
+                              )
+                            : _placeholder(),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      if (p.songCount > 0)
+                        Text('${p.songCount} songs',
+                            style: const TextStyle(color: SonivoColors.textSecondary, fontSize: 12)),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Text('Songs', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        ),
+      ],
+    );
+  }
+
+  Widget _placeholder() => Container(
+        width: 130,
+        height: 130,
+        color: Colors.grey[850],
+        child: const Icon(Icons.queue_music, color: Colors.white38, size: 40),
+      );
 }

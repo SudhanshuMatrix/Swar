@@ -4,22 +4,13 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 
 import '../core/constants.dart';
+import '../models/online_playlist.dart';
 import '../models/track.dart';
 
 class StreamResult {
   final String url;
   final Track track;
   StreamResult({required this.url, required this.track});
-}
-
-/// Result of resolving Video mode: YouTube rarely serves one combined
-/// stream any more, so this carries both the muted video-only [videoUrl]
-/// and the real [audioUrl] — the client plays them in sync.
-class VideoStreamResult {
-  final String videoUrl;
-  final String audioUrl;
-  final Track track;
-  VideoStreamResult({required this.videoUrl, required this.audioUrl, required this.track});
 }
 
 /// An error from the Swar backend with its stable [code]
@@ -179,19 +170,6 @@ class ApiService {
     return StreamResult(url: data['audio_url'] as String, track: Track.fromJson(data));
   }
 
-  Future<VideoStreamResult> resolveVideo(String trackId) async {
-    final res = await http.get(Uri.parse('$baseUrl/video/${Uri.encodeComponent(trackId)}'));
-    if (res.statusCode != 200) {
-      throw _legacyError(res, 'Could not resolve video');
-    }
-    final data = jsonDecode(res.body) as Map<String, dynamic>;
-    return VideoStreamResult(
-      videoUrl: data['video_url'] as String,
-      audioUrl: data['audio_url'] as String,
-      track: Track.fromJson(data),
-    );
-  }
-
   Future<List<Track>> getRelated(String trackId) async {
     final res = await http.get(Uri.parse('$baseUrl/related/${Uri.encodeComponent(trackId)}'));
     if (res.statusCode != 200) {
@@ -200,6 +178,23 @@ class ApiService {
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     final results = (data['results'] as List).cast<Map<String, dynamic>>();
     return results.map(Track.fromJson).toList();
+  }
+
+  // ---- Playlists from the catalog ----
+
+  Future<List<OnlinePlaylist>> searchPlaylists(String query, {int limit = 10}) async {
+    final q = Uri(queryParameters: {'q': query, 'type': 'playlists', 'limit': '$limit'}).query;
+    final data = await _public('GET', '/v1/search?$q') as Map<String, dynamic>;
+    final page = data['playlists'] as Map<String, dynamic>?;
+    return ((page?['results'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(OnlinePlaylist.fromJson)
+        .toList();
+  }
+
+  Future<OnlinePlaylist> playlist(String id, {int limit = 100}) async {
+    final data = await _public('GET', '/v1/playlists/${Uri.encodeComponent(id)}?limit=$limit');
+    return OnlinePlaylist.fromJson(data as Map<String, dynamic>);
   }
 
   // ---- Deep Search ----
