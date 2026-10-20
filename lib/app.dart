@@ -9,7 +9,7 @@ class SonivoApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Sonivo',
+      title: 'Swar',
       debugShowCheckedModeBanner: false,
       theme: SonivoTheme.dark,
       darkTheme: SonivoTheme.dark,

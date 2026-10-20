@@ -66,7 +66,7 @@ class _SearchScreenState extends State<SearchScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'Search failed. Make sure the Sonivo backend is running ($e)');
+      setState(() => _error = 'Search failed. Make sure the Swar backend is running ($e)');
     } finally {
       if (mounted) setState(() => _loading = false);
     }

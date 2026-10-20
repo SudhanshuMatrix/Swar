@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
+import 'core/constants.dart';
 import 'services/api_service.dart';
 import 'services/audio_handler.dart';
 import 'services/download_service.dart';
@@ -24,7 +25,7 @@ Future<void> main() async {
       builder: () => SonivoAudioHandler(),
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'com.sonivo.audio',
-        androidNotificationChannelName: 'Sonivo playback',
+        androidNotificationChannelName: 'Swar playback',
         androidNotificationOngoing: true,
         androidStopForegroundOnPause: true,
       ),
@@ -33,6 +34,7 @@ Future<void> main() async {
     audioHandler = SonivoAudioHandler();
   }
 
+  await ApiConfig.load();
   final api = ApiService();
   final downloads = DownloadService(api: api);
   await downloads.init();
