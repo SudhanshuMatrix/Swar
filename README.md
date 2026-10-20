@@ -1,202 +1,257 @@
-# Sonivo 🎵
+# Swar
 
-A free, cross-platform Spotify-like music and music-video player built with **Flutter**, powered by a high-performance **Go backend** that leverages `yt-dlp`.
+Swar is a free music player for Android, Linux, macOS, Windows and the web.
+Search a large catalog of Indian and international songs, build playlists,
+save songs for offline listening, and listen together with friends in a Jam.
+The app is written in Flutter and talks to its own Go server.
 
-Sonivo streams audio and video directly from CDN endpoints, giving you ad-free music playback with background audio support, offline playlist storage, and the ability to seamlessly switch between Audio and Video mode in real time.
+![Swar on desktop: search results with singers, playlists and songs](docs/screenshots/desktop-search.png)
 
----
+<p>
+  <img src="docs/screenshots/mobile-home.png" width="30%" alt="Home on a phone">
+  <img src="docs/screenshots/mobile-search.png" width="30%" alt="Search on a phone with the mini player">
+  <img src="docs/screenshots/mobile-now-playing.png" width="30%" alt="Now playing on a phone">
+</p>
 
-## ✨ Features
+The screenshots use sample songs and artwork.
 
-- **🎧 Audio & Video Dual Mode**: Seamless YT-Music style segmented toggle. Audio is the single source of truth; switching to Video mode overlays a position-synced visual video layer without interrupting playback or buffering.
-- **📱 Background Playback & Lock Screen Controls**: Powered by `just_audio` and `audio_service`, audio keeps playing when your phone screen turns off or the app is minimized, with OS-level lock screen notifications and headphone controls (Play/Pause/Skip).
-- **🔍 Smart Search & YouTube Link Resolution**: Search by song name, artist, album, or directly paste YouTube URLs (`youtube.com/watch?v=...`, `youtu.be/...`) and 11-character video IDs.
-- **🏷️ Browse Categories**: One-tap explore cards for Top Hits, Pop, Rock, Hip-Hop, Lofi & Chill, Indie, Electronic, Acoustic, Jazz & Blues, Workout, Focus, and Gaming.
-- **📜 Full Play Queue Management**: Interactive queue sheet showing the currently playing track and upcoming queue. Jump to any track, remove items, clear upcoming songs, or reorder the queue.
-- **📻 Radio & Autoplay Similar Tracks**: Continuous playback — automatically resolves and queues related songs when your playlist finishes.
-- **💾 Offline Library & Playlists**: Create, rename, and manage playlists, liked songs, and recently played tracks saved locally with `Hive` (supported across Web IndexedDB, Desktop, and Mobile).
-- **🎨 Spotify-Inspired Dark Theme**: Sleek Material 3 design with vibrant Spotify Green accent highlights, glowing cards, and a persistent mini-player.
+## Contents
 
----
+- [Features](#features)
+- [Download](#download)
+- [Screenshots](#screenshots)
+- [How it works](#how-it-works)
+- [Run it yourself](#run-it-yourself)
+- [Updates and releases](#updates-and-releases)
+- [Project layout](#project-layout)
+- [Credits](#credits)
+- [Disclaimer](#disclaimer)
 
-## 🏗️ Architecture
+## Features
+
+**Listening**
+- Search songs, singers and playlists in one place. Singers without songs are
+  hidden, and the rest are sorted by how many songs they have.
+- Deep Search finds songs the catalog does not have, such as international
+  releases, and plays them through the server.
+- Artist pages with every song the catalog has for the artist, with Play and
+  Shuffle. Tap the artist name in the player to open their page.
+- A queue you can reorder, shuffle, repeat, and next-song recommendations that
+  follow what you play and skip.
+- Radio started from any song.
+- Background playback with lock screen and media key controls.
+
+**Your library**
+- Liked songs, your own playlists and recently played songs, stored on the
+  device.
+- Download songs for offline listening.
+
+**Jam**
+- Start a Jam and share its code. Everyone hears the same song at the same
+  time, and anyone the host allows can add songs to the shared queue.
+- "Add to Jam" is in every song's menu, and a Jam can search for songs to add.
+
+**Desktop**
+- A sidebar with your playlists, pages that open beside it, and a full-width
+  player bar with seek, queue and volume.
+- Keyboard shortcuts: Space plays or pauses, Ctrl or Cmd with the left and
+  right arrows skips songs, and Ctrl or Cmd with F opens search.
+
+**Updates**
+- The app checks for a newer release when it starts and links to the
+  installer for your platform. "Check for updates" is in the Library.
+
+## Download
+
+Get the latest build from the
+[Releases page](https://github.com/SudhanshuMatrix/Swar/releases/latest).
+
+| Platform | File | Notes |
+| --- | --- | --- |
+| Android | `Swar-Android.apk` | Allow installs from your browser or file manager when asked. |
+| Windows | `Swar-Setup-<version>.exe`, or the portable `.zip` | On "Windows protected your PC", click More info, then Run anyway. |
+| macOS | `Swar-macOS.dmg` | The app is not signed. The first time, right-click it and choose Open, or use System Settings, Privacy & Security, Open Anyway. |
+| Linux | `swar_<version>_amd64.deb`, or `swar-linux-x64-<version>.tar.gz` | For Ubuntu, Lubuntu and other Debian based systems, 22.04 and newer. `sudo apt install ./swar_<version>_amd64.deb` also installs libmpv, which plays the audio. |
+
+Every push to `master` also builds all platforms. Those test builds are on
+the run page in the Actions tab.
+
+## Screenshots
+
+**Discover.** Moods and genres to explore, each with its own cover.
+
+![Discover on desktop](docs/screenshots/desktop-discover.png)
+
+**Artist page.** Every song by the artist, with Play and Shuffle.
+
+![Artist page on desktop](docs/screenshots/desktop-artist.png)
+
+**Now playing.** Large artwork, seek bar, and shortcuts to the queue and Jam.
+
+![Now playing on desktop](docs/screenshots/desktop-now-playing.png)
+
+## How it works
 
 ```
-┌────────────────────────────────────────────────────────┐
-│                   Flutter Client                       │
-│  (Android / iOS / Windows / macOS / Linux / Web)       │
-│                                                        │
-│  • Provider State Management (Player & Library)        │
-│  • just_audio + audio_service (Audio Engine)           │
-│  • video_player (Muted Visual Sync Layer)              │
-│  • Hive Local Storage (Playlists, Liked, Recents)      │
-└───────────────▲────────────────────────▲───────────────┘
-                │                        │
-       1. Resolve Stream URLs      3. Direct CDN Stream
-                │                  (Audio: m4a / Video: mp4)
-                ▼                        │
-┌──────────────────────────────┐         │
-│          Go Backend          │         │
-│  • /search                   │         │
-│  • /track/{id}               │         │
-│  • /video/{id}               │         │
-│  • /related/{id}             │         │
-│  • Auto yt-dlp discovery     │         │
-│  • In-memory TTL Cache       │         │
-└───────────────┬──────────────┘         │
-                │                        │
-       2. Resolve Metadata               │
-                ▼                        │
-┌──────────────────────────────┐         │
-│            yt-dlp            │─────────┘
-└──────────────────────────────┘
+ Swar app (Flutter)                        Swar server (Go, server/)
+ Android, iOS, Linux,      HTTPS + JSON    catalog search (Saavn)
+ macOS, Windows, web   <---------------->  Deep Search (yt-dlp)
+                           WebSocket       audio relay for Deep Search songs
+                       <---------------->  recommendations, radio, library
+                           (Jam)           Jam sessions, download tracking
 ```
 
-> **Why a Go backend?**  
-> `yt-dlp` cannot run inside browser sandboxes (Flutter Web) or mobile app sandboxes (iOS/Android). The lightweight Go service handles searching and URL resolution by shelling out to `yt-dlp`, returning CDN stream URLs directly to Flutter. The backend never proxies media bytes.
+- **Catalog.** Searches, artists, playlists and most songs come from the
+  Saavn catalog through the server.
+- **Deep Search.** When a song is not in the catalog, Deep Search looks it up
+  with yt-dlp. The server streams the audio to the app itself, so it plays the
+  same way on every platform. When a video is blocked or age restricted, the
+  server tries another public upload of the same song.
+- **Playback.** The app uses just_audio with audio_service for background
+  playback, and libmpv on Linux.
+- **Storage.** The library, playlists and settings live on the device in
+  Hive. The server keeps an anonymous device token for recommendations, radio
+  and Jam.
 
----
+The hosted server is at `https://swar-urov.onrender.com`, and release builds
+use it by default.
 
-## 🚀 Quick Start
+## Run it yourself
 
-### 1. Prerequisites
+### Requirements
 
-- **Go**: 1.24+ ([Download Go](https://go.dev/dl/))
-- **Flutter**: 3.19+ ([Download Flutter](https://docs.flutter.dev/get-started/install))
-- **Python 3 & yt-dlp** (only for Deep Search):
-  ```bash
-  pip install -U yt-dlp
-  ```
-- **FFmpeg** (Recommended for audio/video format processing)
+- Flutter, stable channel (CI uses the latest stable)
+- Go 1.24 or newer, for the server
+- Python 3 and yt-dlp, for Deep Search: `pip install -U "yt-dlp[default]"`
 
----
+### The app
 
-### 2. Run the Backend
-
-From the repository root:
+The platform folders (`android/`, `linux/`, `macos/`, `windows/`, `web/`) are
+generated, not kept in git. Create them once, then run on any device:
 
 ```bash
-# Using Makefile
-make backend
-
-# Or directly with Go:
-cd server
-go run ./cmd/server
-```
-
-The backend is the Swar Go server in `server/` (catalog from Saavn, Deep Search through yt-dlp, radio, library, offline downloads and Swar Jam). It starts at `http://127.0.0.1:8765`.
-
-Song playback needs `SAAVN_MEDIA_URLS_ENABLED=true`; it is off by default because turning it on is the server operator's decision about streaming rights. See `server/docs/DECISIONS.md` and `server/.env.example`.
-
-You can test that the backend is running by opening:
-`http://127.0.0.1:8765/healthz` or `http://127.0.0.1:8765/search?q=kesariya`
-
-Full API: `server/docs/API.md`. Moving from the old backend: `server/docs/MIGRATION.md`.
-
----
-
-### 3. Setup & Run the Flutter App
-
-First time project setup (generates native platform directories and fetches packages):
-
-```bash
-# Using Makefile
-make setup
-
-# Or manually:
-flutter create --platforms=android,ios,linux,web,windows --org com.sonivo --project-name sonivo .
+bash scripts/prepare_platforms.sh android,linux,macos,web,windows
 flutter pub get
+flutter run -d macos          # or linux, windows, chrome, or an Android device
 ```
 
-#### Run on Desktop / Web / Mobile:
+The server address comes from `API_BASE_URL` in a `.env` file at the
+repository root:
+
+```
+API_BASE_URL=https://swar-urov.onrender.com
+```
+
+A `--dart-define=API_BASE_URL=...` flag overrides it for one run. For a
+server on your own computer, use `http://127.0.0.1:8765`, or
+`http://10.0.2.2:8765` from the Android emulator.
+
+Tests and checks:
 
 ```bash
-# Windows
-make windows
-# or: flutter run -d windows
-
-# Web (Chrome)
-make web
-# or: flutter run -d chrome
-
-# Android Emulator (uses 10.0.2.2 alias for host localhost)
-flutter run -d android --dart-define=API_BASE_URL=http://10.0.2.2:8765
-
-# Physical Device on local Wi-Fi:
-flutter run -d <device-id> --dart-define=API_BASE_URL=http://<YOUR_LAN_IP>:8765
+flutter analyze
+flutter test
 ```
 
----
+### The server
 
-## 📁 Project Structure
-
-```
-Sonivo/
-├── backend/
-│   ├── go.mod                 # Go module definition
-│   └── main.go                # HTTP API wrapping yt-dlp (/search, /track, /video, /related)
-├── lib/
-│   ├── core/
-│   │   ├── constants.dart     # API base URL configuration
-│   │   └── theme.dart         # Spotify dark theme palette & styling
-│   ├── models/
-│   │   ├── playlist.dart      # Playlist data model
-│   │   └── track.dart         # Track data model with serialization
-│   ├── screens/
-│   │   ├── home_shell.dart    # Main navigation shell & Home tab
-│   │   ├── search_screen.dart # Search screen with genre cards & YouTube link parser
-│   │   ├── library_screen.dart# User playlists & Liked songs
-│   │   ├── playlist_screen.dart# Playlist detail view with shuffle & reorder
-│   │   └── now_playing_screen.dart # Full-screen player with Queue & Video toggle
-│   ├── services/
-│   │   ├── api_service.dart   # Client HTTP service communicating with Go backend
-│   │   ├── audio_handler.dart # just_audio + audio_service background handler
-│   │   └── library_service.dart# Hive local database for persistent library
-│   ├── state/
-│   │   ├── library_provider.dart # ChangeNotifier for playlists & liked songs
-│   │   └── player_provider.dart  # Core playback engine, queue, & video sync
-│   ├── widgets/
-│   │   ├── audio_video_switch.dart # Animated tab switch between audio and video
-│   │   ├── mini_player.dart   # Persistent bottom mini player bar
-│   │   └── track_tile.dart    # Reusable track list tile with active highlight
-│   ├── app.dart               # Top-level MaterialApp
-│   └── main.dart              # App bootstrap & audio service initialization
-├── Makefile                   # Automation commands for build, test, and run
-├── pubspec.yaml               # Flutter dependencies
-└── analysis_options.yaml      # Dart linter configurations
+```bash
+cd server
+make run          # starts on :8765, data in ./data/swar.db
+make check        # vet, race tests and build
+make docker       # container image
 ```
 
----
+Settings are environment variables, listed in `server/.env.example`. The ones
+that turn on playback:
 
-## 🛠️ API Reference (Backend)
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/health` | Health check endpoint returning `{"status": "ok"}` |
-| `GET` | `/search?q={query}&limit={n}` | Searches YouTube or resolves direct YouTube URLs |
-| `GET` | `/track/{id}` | Resolves audio stream URL (`m4a` / `webm`) and metadata |
-| `GET` | `/video/{id}` | Resolves both video-only (`mp4`) and real audio stream URLs |
-| `GET` | `/related/{id}` | Resolves similar recommended tracks for Radio autoplay |
-
----
-
-## 📦 Builds (GitHub Actions)
-
-`.github/workflows/build.yml` runs on every push to `master` and starts one small workflow per platform. Each can also be run on its own from the **Actions** tab. Download the files from the run page.
-
-| Workflow | Files |
+| Variable | Purpose |
 | --- | --- |
-| `android.yml` | `Swar-Android.apk` |
-| `macos.yml` | `Swar-macOS.dmg` (unsigned) |
-| `linux.yml` | `swar_<version>_amd64.deb` and `swar-linux-x64-<version>.tar.gz` for Ubuntu / Lubuntu 22.04 and newer |
-| `windows.yml` | `Swar-Setup-<version>.exe` installer and a portable `.zip` |
+| `SAAVN_MEDIA_URLS_ENABLED=true` | Play catalog songs. |
+| `DEEPSEARCH_PLAYBACK_ENABLED=true` | Play Deep Search songs. |
+| `SAAVN_DOWNLOADS_ENABLED`, `DEEPSEARCH_DOWNLOADS_ENABLED` | Allow offline downloads. |
+| `SWAR_ENV=production` with `SWAR_TOKEN_SECRET` | Required for a public deployment. |
 
-Shared setup (Flutter, `.env`, platform folders) lives in `.github/actions/setup`. Pushing a tag such as `v0.2.0` also publishes every file as a GitHub Release.
+Both playback switches are off by default because turning them on is the
+operator's decision about streaming rights. Read
+[server/docs/DECISIONS.md](server/docs/DECISIONS.md) first.
 
-- **macOS:** the app is unsigned. The first time, right-click it and choose **Open** (or System Settings → Privacy & Security → **Open Anyway**).
-- **Windows:** on the "Windows protected your PC" screen, click **More info** → **Run anyway**.
-- **Linux:** `sudo apt install ./swar_<version>_amd64.deb` also installs libmpv, which plays the audio.
+More about the server:
+[API reference](server/docs/API.md),
+[deployment and sizing](server/docs/DEPLOYMENT.md),
+[design decisions](server/docs/DECISIONS.md).
 
-## ⚖️ Legal & Disclaimer
+## Updates and releases
 
-For personal, educational, and non-commercial research use only. Streaming media from third-party platforms may be subject to their respective Terms of Service. You are solely responsible for how you use this software.
+### Making a release
+
+1. Raise `version:` in `pubspec.yaml`, for example from `0.2.0+2` to `0.3.0+3`.
+2. Add a section for that version at the top of `CHANGELOG.md`:
+
+   ```markdown
+   ## [0.3.0] - 2026-11-02
+
+   ### Added
+   - Something new.
+
+   ### Fixed
+   - Something that was broken.
+   ```
+
+3. Commit and push to `master`.
+
+The Build workflow reads the version. When no tag `v0.3.0` exists yet, it
+builds every platform and publishes GitHub Release `v0.3.0` with all files
+attached and that changelog section as the release notes. If the changelog
+has no section for the new version, the workflow stops with an error that
+says so. Pushes that do not change the version only build.
+
+To print the notes a release will get:
+
+```bash
+bash scripts/changelog_notes.sh 0.3.0
+```
+
+### In-app update check
+
+A few seconds after it starts, the app asks GitHub for the latest release.
+When that release is newer than the running version, it shows the changelog
+with three choices: Download (opens the installer for the platform), Later,
+and Skip this version. Library, About Swar, Check for updates does the same
+check on demand. The check is quiet when the device is offline.
+
+Android builds from CI are signed with a new debug key on every run. Until a
+fixed release key is added, Android may refuse to install a new APK over an
+older one. Uninstall the old version first in that case.
+
+## Project layout
+
+```
+lib/
+  core/         theme, icons, constants, error messages
+  models/       tracks, playlists, artists
+  screens/      home, search, library, artist, playlists, Jam, now playing
+  services/     server API, audio, downloads, Jam, library storage, updates
+  state/        player and library state
+  widgets/      player bar, mini player, song tiles, dialogs
+server/         Go server: cmd/, internal/, migrations/, docs/
+packaging/      Linux .deb and Windows installer scripts
+scripts/        platform setup and changelog notes
+.github/        Build workflow and one workflow per platform
+docs/           screenshots
+test/           Flutter tests
+```
+
+## Credits
+
+- [Flutter](https://flutter.dev), [just_audio](https://pub.dev/packages/just_audio)
+  and [audio_service](https://pub.dev/packages/audio_service)
+- [Inter](https://rsms.me/inter/) typeface, SIL Open Font License 1.1
+- [Phosphor Icons](https://phosphoricons.com), MIT License
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) for Deep Search
+
+## Disclaimer
+
+Swar is for personal, educational and non-commercial use. Songs come from
+third-party services whose terms may apply. You are responsible for how you
+use this software and for the settings you turn on when you run the server.

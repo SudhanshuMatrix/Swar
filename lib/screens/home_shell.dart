@@ -15,6 +15,7 @@ import '../widgets/player_bar.dart';
 import '../widgets/track_actions.dart';
 import '../widgets/track_tile.dart';
 import '../widgets/ui.dart';
+import '../widgets/update_dialog.dart';
 import 'jam_screen.dart';
 import 'library_screen.dart';
 import 'now_playing_screen.dart';
@@ -61,6 +62,9 @@ class _HomeShellState extends State<HomeShell> {
   void initState() {
     super.initState();
     openInShell = (page) => _navigators[_index].currentState?.push(MaterialPageRoute(builder: (_) => page));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) checkForUpdatesOnStart(context);
+    });
   }
 
   @override
