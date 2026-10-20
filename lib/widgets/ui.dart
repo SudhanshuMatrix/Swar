@@ -121,21 +121,23 @@ class GradientPlayButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message: playing ? 'Pause' : 'Play',
-      child: Material(
-        type: MaterialType.transparency,
-        child: Ink(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: SonivoColors.brandGradient,
-            boxShadow: [
-              BoxShadow(
-                  color: SonivoColors.rose.withOpacity(0.35), blurRadius: size * 0.35, offset: const Offset(0, 4)),
-            ],
-          ),
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: SonivoColors.brandGradient,
+          boxShadow: [
+            BoxShadow(color: SonivoColors.rose.withOpacity(0.35), blurRadius: size * 0.35, offset: const Offset(0, 4)),
+          ],
+        ),
+        // A circular, transparent Material keeps the tap ripple round
+        // without painting a square behind the button.
+        child: Material(
+          type: MaterialType.transparency,
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
           child: InkWell(
-            customBorder: const CircleBorder(),
             onTap: loading ? null : onPressed,
             child: Center(
               child: loading

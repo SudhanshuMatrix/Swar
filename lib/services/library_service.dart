@@ -19,15 +19,22 @@ class LibraryService {
   late Box _playlists;
   late Box _liked;
   late Box _recent;
+  late Box _plays;
+  late Box _searches;
+  late Box _session;
   bool _ready = false;
 
-  Future<void> init() async {
+  /// Opens the boxes. Tests pass a [path] to keep data in a temp folder.
+  Future<void> init({String? path}) async {
     if (_ready) return;
-    await Hive.initFlutter();
+    path == null ? await Hive.initFlutter() : Hive.init(path);
     _tracks = await Hive.openBox('tracks');
     _playlists = await Hive.openBox('playlists');
     _liked = await Hive.openBox('liked');
     _recent = await Hive.openBox('recent');
+    _plays = await Hive.openBox('plays');
+    _searches = await Hive.openBox('searches');
+    _session = await Hive.openBox('session');
     _ready = true;
   }
 
@@ -122,6 +129,80 @@ class LibraryService {
     final entries = _recent.keys.map((k) => MapEntry(k as String, _recent.get(k) as int)).toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     return entries.take(limit).map((e) => _trackFromId(e.key)).whereType<Track>().toList();
+  }
+
+  // ---- Play counts ----
+
+  Future<void> countPlay(Track track) async {
+    await cacheTrack(track);
+    final count = (_plays.get(track.id) as int? ?? 0) + 1;
+    await _plays.put(track.id, count);
+  }
+
+  /// Songs played at least twice, most played first.
+  List<Track> getMostPlayed({int limit = 50}) {
+    final entries = _plays.keys
+        .map((k) => MapEntry(k as String, _plays.get(k) as int))
+        .where((e) => e.value >= 2)
+        .toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return entries.take(limit).map((e) => _trackFromId(e.key)).whereType<Track>().toList();
+  }
+
+  int playCount(String trackId) => _plays.get(trackId) as int? ?? 0;
+
+  // ---- Recent searches ----
+
+  Future<void> addSearch(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) return;
+    await _searches.put(q.toLowerCase(), {'q': q, 'at': DateTime.now().millisecondsSinceEpoch});
+    // Keep the list short.
+    final keys = _searchEntries().map((e) => e.key).toList();
+    for (final k in keys.skip(12)) {
+      await _searches.delete(k);
+    }
+  }
+
+  List<MapEntry<String, Map>> _searchEntries() =>
+      _searches.keys.map((k) => MapEntry(k as String, Map.from(_searches.get(k) as Map))).toList()
+        ..sort((a, b) => (b.value['at'] as int).compareTo(a.value['at'] as int));
+
+  List<String> getSearches({int limit = 8}) => _searchEntries().take(limit).map((e) => e.value['q'] as String).toList();
+
+  Future<void> removeSearch(String query) => _searches.delete(query.trim().toLowerCase());
+
+  Future<void> clearSearches() => _searches.clear();
+
+  // ---- Listening session (resume after restart) ----
+
+  Future<void> saveSession(List<Track> queue, int index, Duration position) async {
+    for (final t in queue) {
+      if (!_tracks.containsKey(t.id)) await cacheTrack(t);
+    }
+    await _session.put('state', {
+      'ids': queue.map((t) => t.id).toList(),
+      'index': index,
+      'positionMs': position.inMilliseconds,
+    });
+  }
+
+  Future<void> savePosition(Duration position) async {
+    final raw = _session.get('state');
+    if (raw == null) return;
+    final m = Map<String, dynamic>.from(raw as Map);
+    m['positionMs'] = position.inMilliseconds;
+    await _session.put('state', m);
+  }
+
+  ({List<Track> queue, int index, Duration position})? loadSession() {
+    final raw = _session.get('state');
+    if (raw == null) return null;
+    final m = Map<String, dynamic>.from(raw as Map);
+    final queue = List<String>.from(m['ids'] as List? ?? const []).map(_trackFromId).whereType<Track>().toList();
+    final index = m['index'] as int? ?? -1;
+    if (queue.isEmpty || index < 0 || index >= queue.length) return null;
+    return (queue: queue, index: index, position: Duration(milliseconds: m['positionMs'] as int? ?? 0));
   }
 }
 

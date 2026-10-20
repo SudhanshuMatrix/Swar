@@ -242,7 +242,12 @@ class SonivoTheme {
         backgroundColor: SonivoColors.surfaceHigh,
         selectedColor: SonivoColors.accent,
         side: const BorderSide(color: SonivoColors.outline),
-        labelStyle: const TextStyle(fontFamily: fontFamily, fontWeight: FontWeight.w600, fontSize: 13),
+        labelStyle: const TextStyle(
+            fontFamily: fontFamily, fontWeight: FontWeight.w600, fontSize: 13, color: SonivoColors.textPrimary),
+        secondaryLabelStyle: const TextStyle(
+            fontFamily: fontFamily, fontWeight: FontWeight.w600, fontSize: 13, color: SonivoColors.onAccent),
+        checkmarkColor: SonivoColors.onAccent,
+        iconTheme: const IconThemeData(color: SonivoColors.textSecondary, size: 16),
         shape: const StadiumBorder(),
       ),
       switchTheme: SwitchThemeData(

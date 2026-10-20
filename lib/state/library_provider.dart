@@ -8,11 +8,15 @@ class LibraryProvider extends ChangeNotifier {
   List<Playlist> playlists = [];
   List<Track> liked = [];
   List<Track> recent = [];
+  List<Track> mostPlayed = [];
+  List<String> searches = [];
 
   void refresh() {
     playlists = LibraryService.instance.getPlaylists();
     liked = LibraryService.instance.getLiked();
     recent = LibraryService.instance.getRecent();
+    mostPlayed = LibraryService.instance.getMostPlayed();
+    searches = LibraryService.instance.getSearches();
     notifyListeners();
   }
 
@@ -43,6 +47,21 @@ class LibraryProvider extends ChangeNotifier {
 
   Future<void> toggleLiked(Track track) async {
     await LibraryService.instance.toggleLiked(track);
+    refresh();
+  }
+
+  Future<void> addSearch(String query) async {
+    await LibraryService.instance.addSearch(query);
+    refresh();
+  }
+
+  Future<void> removeSearch(String query) async {
+    await LibraryService.instance.removeSearch(query);
+    refresh();
+  }
+
+  Future<void> clearSearches() async {
+    await LibraryService.instance.clearSearches();
     refresh();
   }
 

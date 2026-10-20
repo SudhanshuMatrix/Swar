@@ -449,6 +449,24 @@ class _HomeTab extends StatelessWidget {
                 ),
               ),
             ],
+            if (library.mostPlayed.length >= 3) ...[
+              const SliverToBoxAdapter(child: SectionHeader('On repeat', subtitle: 'Your most played songs')),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 214,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: EdgeInsets.symmetric(horizontal: side),
+                    itemCount: library.mostPlayed.length.clamp(0, 15),
+                    separatorBuilder: (_, __) => const SizedBox(width: Gaps.lg),
+                    itemBuilder: (context, i) => _CoverCard(
+                      track: library.mostPlayed[i],
+                      onTap: () => player.playQueue(library.mostPlayed, i),
+                    ),
+                  ),
+                ),
+              ),
+            ],
             SliverToBoxAdapter(
               child: SectionHeader(
                 'Discover',

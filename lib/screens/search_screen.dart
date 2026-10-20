@@ -9,6 +9,7 @@ import '../models/online_artist.dart';
 import '../models/online_playlist.dart';
 import '../models/track.dart';
 import '../services/api_service.dart';
+import '../state/library_provider.dart';
 import '../state/player_provider.dart';
 import '../widgets/genre_card.dart';
 import '../widgets/track_actions.dart';
@@ -81,6 +82,7 @@ class _SearchScreenState extends State<SearchScreen> {
       // still show.
       final playlistsFuture = api.searchPlaylists(trimmed).catchError((_) => <OnlinePlaylist>[]);
       final artistsFuture = api.searchArtists(trimmed, limit: 8).catchError((_) => <OnlineArtist>[]);
+      context.read<LibraryProvider>().addSearch(trimmed);
       final results = await api.search(trimmed);
       final playlists = await playlistsFuture;
       final artists = await artistsFuture;
@@ -232,6 +234,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final side = Gaps.pagePadding(context);
     return CustomScrollView(
       slivers: [
+        if (context.watch<LibraryProvider>().searches.isNotEmpty) _recentSearches(side),
         const SliverToBoxAdapter(child: SectionHeader('Discover', subtitle: 'Pick a mood or genre')),
         SliverPadding(
           padding: EdgeInsets.fromLTRB(side, 0, side, Gaps.xl),
@@ -249,6 +252,42 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _recentSearches(double side) {
+    final library = context.watch<LibraryProvider>();
+    return SliverToBoxAdapter(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SectionHeader(
+            'Recent searches',
+            action: TextButton(onPressed: library.clearSearches, child: const Text('Clear')),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: side),
+            child: Wrap(
+              spacing: Gaps.sm,
+              runSpacing: Gaps.sm,
+              children: [
+                for (final q in library.searches)
+                  InputChip(
+                    avatar: const Icon(PhosphorIconsRegular.clockCounterClockwise, size: 16),
+                    label: Text(q),
+                    onPressed: () {
+                      _controller.text = q;
+                      _search(q);
+                    },
+                    deleteIcon: const Icon(PhosphorIconsRegular.x, size: 14),
+                    deleteButtonTooltipMessage: 'Remove',
+                    onDeleted: () => library.removeSearch(q),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

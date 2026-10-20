@@ -28,6 +28,9 @@ class PlayerProvider extends ChangeNotifier {
   /// When set and in a Jam, the local player follows the shared state.
   JamController? jam;
 
+  /// Called after a song starts, so the library can show it in recents.
+  VoidCallback? onTrackStarted;
+
   PlayerProvider({required this.api, required this.audioHandler}) {
     audioHandler.onSkipToNext = next;
     audioHandler.onSkipToPrevious = previous;
@@ -43,13 +46,20 @@ class PlayerProvider extends ChangeNotifier {
     // Position ticks very often; redrawing every listener on each one makes
     // taps (like play/pause) feel slow, so only notify a few times a second.
     audioHandler.player.positionStream.listen((pos) {
+      // A restored song shows where it was paused until it is loaded.
+      if (_needsLoad) return;
       _position = pos;
+      if (_playingId != null && (pos - _lastSavedPosition).abs() >= const Duration(seconds: 5)) {
+        _lastSavedPosition = pos;
+        LibraryService.instance.savePosition(pos);
+      }
       if ((pos - _lastNotifiedPosition).abs() >= const Duration(milliseconds: 250)) {
         _lastNotifiedPosition = pos;
         notifyListeners();
       }
     });
     audioHandler.player.durationStream.listen((d) {
+      if (_needsLoad) return;
       if (d != null) _duration = d;
       notifyListeners();
     });
@@ -77,6 +87,16 @@ class PlayerProvider extends ChangeNotifier {
   bool _endedNaturally = false;
   Future<void>? _topUp;
   String? _radioLabel;
+  Duration _lastSavedPosition = Duration.zero;
+
+  // Restored from the last session: the song shows, and loads on first play.
+  bool _needsLoad = false;
+  Duration _resumeAt = Duration.zero;
+
+  // Sleep timer.
+  Timer? _sleepTimer;
+  DateTime? _sleepAt;
+  bool _sleepAfterTrack = false;
 
   Track? get currentTrack => (_queueIndex >= 0 && _queueIndex < _queue.length) ? _queue[_queueIndex] : null;
   List<Track> get queue => List.unmodifiable(_queue);
@@ -93,6 +113,71 @@ class PlayerProvider extends ChangeNotifier {
 
   /// Label of the radio station feeding the queue, if any.
   String? get radioLabel => _radioLabel;
+
+  /// When the sleep timer will pause playback, if it is set to a time.
+  DateTime? get sleepAt => _sleepAt;
+
+  /// Whether playback pauses when the current song ends.
+  bool get sleepAfterTrack => _sleepAfterTrack;
+
+  bool get sleepTimerActive => _sleepAt != null || _sleepAfterTrack;
+
+  /// Pauses after [after], or turns the timer off when null.
+  void setSleepTimer(Duration? after) {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepAfterTrack = false;
+    _sleepAt = null;
+    if (after != null) {
+      _sleepAt = DateTime.now().add(after);
+      _sleepTimer = Timer(after, _sleepNow);
+    }
+    notifyListeners();
+  }
+
+  /// Pauses when the current song finishes.
+  void setSleepAfterTrack() {
+    setSleepTimer(null);
+    _sleepAfterTrack = true;
+    notifyListeners();
+  }
+
+  void _sleepNow() {
+    _sleepTimer = null;
+    _sleepAt = null;
+    _sleepAfterTrack = false;
+    if (_playing) playPause();
+    notifyListeners();
+  }
+
+  /// Playback was stopped from outside (the notification's close button):
+  /// keep the song and its place so play starts it again.
+  void markStopped() {
+    if (currentTrack == null) return;
+    _closePlay();
+    _resumeAt = _position;
+    _needsLoad = true;
+    _playing = false;
+    notifyListeners();
+  }
+
+  /// Puts back the queue and song from last time, paused where it was.
+  void restoreSession() {
+    final saved = LibraryService.instance.loadSession();
+    if (saved == null || currentTrack != null) return;
+    _queue = saved.queue;
+    _queueIndex = saved.index;
+    _resumeAt = saved.position;
+    _position = saved.position;
+    _duration = saved.queue[saved.index].duration;
+    _needsLoad = true;
+    notifyListeners();
+  }
+
+  void _saveSession() {
+    if (currentTrack == null) return;
+    LibraryService.instance.saveSession(_queue, _queueIndex, _position).catchError((_) {});
+  }
 
   void toggleAutoPlayRelated() {
     _autoPlayRelated = !_autoPlayRelated;
@@ -119,6 +204,7 @@ class PlayerProvider extends ChangeNotifier {
 
   void addToQueue(Track track) {
     _queue.add(track);
+    _saveSession();
     notifyListeners();
   }
 
@@ -128,6 +214,7 @@ class PlayerProvider extends ChangeNotifier {
       return;
     }
     _queue.insert(_queueIndex + 1, track);
+    _saveSession();
     notifyListeners();
   }
 
@@ -173,6 +260,7 @@ class PlayerProvider extends ChangeNotifier {
     } else if (oldIndex > _queueIndex && newIndex <= _queueIndex) {
       _queueIndex++;
     }
+    _saveSession();
     notifyListeners();
   }
 
@@ -186,6 +274,7 @@ class PlayerProvider extends ChangeNotifier {
       _queue.clear();
       _queueIndex = -1;
     }
+    _saveSession();
     notifyListeners();
   }
 
@@ -197,9 +286,10 @@ class PlayerProvider extends ChangeNotifier {
         duration: t.duration,
       );
 
-  Future<void> _loadCurrent({required bool autoplay}) async {
+  Future<void> _loadCurrent({required bool autoplay, Duration startAt = Duration.zero}) async {
     final track = currentTrack;
     if (track == null) return;
+    _needsLoad = false;
     _closePlay();
     _loading = true;
     _errorMessage = null;
@@ -207,12 +297,14 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final local = downloads?.localFileFor(track.id);
+      final start = startAt > Duration.zero ? startAt : null;
       if (local != null) {
-        await audioHandler.loadUrl(Uri.file(local).toString(), _mediaItem(track));
+        await audioHandler.loadUrl(Uri.file(local).toString(), _mediaItem(track), startAt: start);
       } else {
         final stream = await api.resolveAudio(track.id);
-        await audioHandler.loadUrl(stream.url, _mediaItem(stream.track));
+        await audioHandler.loadUrl(stream.url, _mediaItem(stream.track), startAt: start);
       }
+      if (start != null) _position = start;
       if (autoplay) await audioHandler.play();
       _playingId = track.id;
       _playStartedAt = DateTime.now();
@@ -220,6 +312,10 @@ class PlayerProvider extends ChangeNotifier {
       _prefetchUpcoming();
       _maybeTopUpQueue();
       await LibraryService.instance.addRecent(track);
+      await LibraryService.instance.countPlay(track);
+      _lastSavedPosition = _position;
+      _saveSession();
+      onTrackStarted?.call();
     } catch (e) {
       _errorMessage = 'Could not play "${track.title}". ${friendlyError(e)}';
       ErrorPopup.show(e, title: 'Couldn\'t play "${track.title}"', onRetry: () => _loadCurrent(autoplay: true));
@@ -231,6 +327,10 @@ class PlayerProvider extends ChangeNotifier {
 
   /// Flips the button right away, then tells the audio engine.
   Future<void> playPause() async {
+    if (_needsLoad) {
+      await _loadCurrent(autoplay: true, startAt: _resumeAt);
+      return;
+    }
     final wasPlaying = _playing;
     _playing = !wasPlaying;
     notifyListeners();
@@ -244,6 +344,12 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> seek(Duration pos) async {
+    if (_needsLoad) {
+      _resumeAt = pos;
+      _position = pos;
+      notifyListeners();
+      return;
+    }
     await audioHandler.player.seek(pos);
     _position = pos;
     _lastNotifiedPosition = pos;
@@ -411,6 +517,12 @@ class PlayerProvider extends ChangeNotifier {
       j.reportTrackEnded();
       return;
     }
+    if (_sleepAfterTrack) {
+      _sleepAfterTrack = false;
+      await audioHandler.pause();
+      notifyListeners();
+      return;
+    }
     if (_repeat == PlaybackRepeatMode.one) {
       await seek(Duration.zero);
       await audioHandler.play();
@@ -418,5 +530,4 @@ class PlayerProvider extends ChangeNotifier {
     }
     await next();
   }
-
 }

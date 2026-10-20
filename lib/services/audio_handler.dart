@@ -16,13 +16,28 @@ class SonivoAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Future<void> Function()? onSkipToNext;
   Future<void> Function()? onSkipToPrevious;
 
+  /// The heart in the notification.
+  Future<void> Function()? onToggleLike;
+
+  /// Called when the notification's close button stops playback.
+  void Function()? onStopped;
+
+  bool _liked = false;
+
+  /// Shows the current song as liked or not in the notification.
+  void setLiked(bool liked) {
+    if (liked == _liked) return;
+    _liked = liked;
+    _broadcastState(null);
+  }
+
   SonivoAudioHandler() {
     player.playbackEventStream.listen(_broadcastState, onError: (Object e, StackTrace st) {});
   }
 
-  Future<void> loadUrl(String url, MediaItem item) async {
+  Future<void> loadUrl(String url, MediaItem item, {Duration? startAt}) async {
     mediaItem.add(item);
-    await player.setAudioSource(AudioSource.uri(Uri.parse(url)));
+    await player.setAudioSource(AudioSource.uri(Uri.parse(url)), initialPosition: startAt);
   }
 
   /// just_audio's play() only completes when playback stops, so awaiting it
@@ -46,11 +61,17 @@ class SonivoAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Future<void> stop() async {
     await player.stop();
     await super.stop();
+    onStopped?.call();
+  }
+
+  @override
+  Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
+    if (name == 'like') await onToggleLike?.call();
   }
 
   Future<void> setVolume(double volume) => player.setVolume(volume);
 
-  void _broadcastState(PlaybackEvent event) {
+  void _broadcastState(PlaybackEvent? event) {
     final playing = player.playing;
     final procState = const {
       ProcessingState.idle: AudioProcessingState.idle,
@@ -62,14 +83,21 @@ class SonivoAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
     playbackState.add(
       playbackState.value.copyWith(
+        // Like, previous, play or pause, next, close; the small view shows
+        // the middle three.
         controls: [
+          MediaControl.custom(
+            androidIcon: _liked ? 'drawable/swar_notif_liked' : 'drawable/swar_notif_like',
+            label: _liked ? 'Unlike' : 'Like',
+            name: 'like',
+          ),
           MediaControl.skipToPrevious,
           if (playing) MediaControl.pause else MediaControl.play,
           MediaControl.skipToNext,
-          MediaControl.stop,
+          const MediaControl(androidIcon: 'drawable/swar_notif_close', label: 'Close', action: MediaAction.stop),
         ],
-        systemActions: const {MediaAction.seek},
-        androidCompactActionIndices: const [0, 1, 2],
+        systemActions: const {MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward},
+        androidCompactActionIndices: const [1, 2, 3],
         processingState: procState,
         playing: playing,
         updatePosition: player.position,

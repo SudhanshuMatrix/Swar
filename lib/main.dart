@@ -41,6 +41,7 @@ Future<void> main() async {
         androidNotificationChannelName: 'Swar playback',
         androidNotificationOngoing: true,
         androidStopForegroundOnPause: true,
+        androidNotificationIcon: 'drawable/swar_notif_icon',
       ),
     );
   } catch (_) {
@@ -56,6 +57,25 @@ Future<void> main() async {
     ..downloads = downloads
     ..jam = jam;
   jam.onPlaybackChanged = player.syncToJam;
+  final library = LibraryProvider()..refresh();
+  player
+    ..onTrackStarted = library.refresh
+    ..restoreSession();
+
+  // Media notification: the heart likes the current song, close stops it.
+  bool currentLiked() {
+    final t = player.currentTrack;
+    return t != null && library.isLiked(t.id);
+  }
+
+  audioHandler
+    ..onToggleLike = () async {
+      final t = player.currentTrack;
+      if (t != null) await library.toggleLiked(t);
+    }
+    ..onStopped = player.markStopped;
+  library.addListener(() => audioHandler.setLiked(currentLiked()));
+  player.addListener(() => audioHandler.setLiked(currentLiked()));
 
   runApp(
     MultiProvider(
@@ -64,7 +84,7 @@ Future<void> main() async {
         ChangeNotifierProvider.value(value: player),
         ChangeNotifierProvider.value(value: downloads),
         ChangeNotifierProvider.value(value: jam),
-        ChangeNotifierProvider(create: (_) => LibraryProvider()..refresh()),
+        ChangeNotifierProvider.value(value: library),
       ],
       child: const SonivoApp(),
     ),

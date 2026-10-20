@@ -6,6 +6,7 @@ import '../core/theme.dart';
 import '../screens/now_playing_screen.dart';
 import '../state/player_provider.dart';
 import 'artist_link.dart';
+import 'sleep_timer.dart';
 import 'track_actions.dart';
 import 'ui.dart';
 
@@ -160,6 +161,7 @@ class PlayerBar extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                const SleepTimerButton(size: 20),
                 IconButton(
                   tooltip: 'Queue',
                   icon: const Icon(PhosphorIconsRegular.playlist, size: 20),

@@ -9,6 +9,7 @@ import '../core/theme.dart';
 import '../state/player_provider.dart';
 import '../widgets/artist_link.dart';
 import '../widgets/jam_picker.dart';
+import '../widgets/sleep_timer.dart';
 import '../widgets/track_actions.dart';
 import '../widgets/ui.dart';
 
@@ -179,6 +180,7 @@ class NowPlayingScreen extends StatelessWidget {
             tooltip: 'Add to Jam',
             onPressed: () => addToJam(context, track),
           ),
+          const SleepTimerButton(),
           IconButton(
             icon: const Icon(PhosphorIconsRegular.playlist),
             tooltip: 'Queue',

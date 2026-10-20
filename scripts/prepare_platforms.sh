@@ -15,6 +15,27 @@ flutter create --platforms="$PLATFORMS" --org com.sonivo --project-name sonivo .
 has() { [[ ",$PLATFORMS," == *",$1,"* ]]; }
 sub() { perl -pi -e "$1" "$2"; }
 
+if has android; then
+  M=android/app/src/main/AndroidManifest.xml
+  sub 's/android:label="sonivo"/android:label="Swar"/' "$M"
+  # Network (release builds get no INTERNET permission by default), then
+  # background playback and the media notification (audio_service).
+  for p in INTERNET WAKE_LOCK FOREGROUND_SERVICE FOREGROUND_SERVICE_MEDIA_PLAYBACK; do
+    grep -q "permission.$p\"" "$M" || \
+      sub "s|(<manifest[^>]*>)|\$1\n    <uses-permission android:name=\"android.permission.$p\"/>|" "$M"
+  done
+  grep -q 'audioservice.AudioService"' "$M" || sub 's|(\s*)</application>|$1    <service android:name="com.ryanheise.audioservice.AudioService"\n            android:foregroundServiceType="mediaPlayback"\n            android:exported="true">\n            <intent-filter>\n                <action android:name="android.media.browse.MediaBrowserService" />\n            </intent-filter>\n        </service>\n        <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"\n            android:exported="true">\n            <intent-filter>\n                <action android:name="android.intent.action.MEDIA_BUTTON" />\n            </intent-filter>\n        </receiver>\n$1</application>|' "$M"
+  # The notification needs the activity that shares Flutter with audio_service.
+  for a in $(find android/app/src/main -name 'MainActivity.kt'); do
+    sub 's/import io\.flutter\.embedding\.android\.FlutterActivity/import com.ryanheise.audioservice.AudioServiceActivity/; s/: FlutterActivity\(\)/: AudioServiceActivity()/' "$a"
+  done
+  for a in $(find android/app/src/main -name 'MainActivity.java'); do
+    sub 's/import io\.flutter\.embedding\.android\.FlutterActivity;/import com.ryanheise.audioservice.AudioServiceActivity;/; s/extends FlutterActivity/extends AudioServiceActivity/' "$a"
+  done
+  # App icon and the notification's icons.
+  cp -R "$ICONS"/android/res/. android/app/src/main/res/
+fi
+
 if has macos; then
   sub 's/^PRODUCT_NAME = .*/PRODUCT_NAME = Swar/' macos/Runner/Configs/AppInfo.xcconfig
   sub 's/^PRODUCT_COPYRIGHT = .*/PRODUCT_COPYRIGHT = Copyright © 2026 Swar. All rights reserved./' macos/Runner/Configs/AppInfo.xcconfig

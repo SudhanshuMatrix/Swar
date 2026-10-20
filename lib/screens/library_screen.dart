@@ -129,6 +129,36 @@ class LibraryScreen extends StatelessWidget {
                   ListTile(
                     leading: const CircleAvatar(
                       backgroundColor: SonivoColors.surfaceHigh,
+                      child: Icon(PhosphorIconsRegular.fire, color: SonivoColors.accent),
+                    ),
+                    title: const Text('Most played', style: TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(
+                      library.mostPlayed.isEmpty
+                          ? 'Songs you play again and again'
+                          : '${library.mostPlayed.length} ${library.mostPlayed.length == 1 ? "song" : "songs"}',
+                      style: const TextStyle(color: SonivoColors.textSecondary),
+                    ),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => PlaylistScreen(title: 'Most played', tracks: library.mostPlayed),
+                    )),
+                  ),
+                  ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: SonivoColors.surfaceHigh,
+                      child: Icon(PhosphorIconsRegular.clockCounterClockwise, color: SonivoColors.accent),
+                    ),
+                    title: const Text('Recently played', style: TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(
+                      '${library.recent.length} ${library.recent.length == 1 ? "song" : "songs"}',
+                      style: const TextStyle(color: SonivoColors.textSecondary),
+                    ),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => PlaylistScreen(title: 'Recently played', tracks: library.recent),
+                    )),
+                  ),
+                  ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: SonivoColors.surfaceHigh,
                       child: Icon(PhosphorIconsFill.checkCircle, color: SonivoColors.accent),
                     ),
                     title: const Text('Offline downloads', style: TextStyle(fontWeight: FontWeight.w600)),

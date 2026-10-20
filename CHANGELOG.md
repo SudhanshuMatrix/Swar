@@ -12,6 +12,30 @@ release notes.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-20
+
+### Added
+- Sleep timer: pause after 15, 30, 45, 60 or 90 minutes, or when the song
+  ends. The moon button is in the player bar and on the Now Playing screen.
+- Pick up where you left off: the app remembers the queue, the song and
+  the position, and resumes from there after a restart.
+- Recent searches on the Search page, with tap to search again and remove.
+- Most played: a list in the Library and an "On repeat" row on Home.
+- Recently played in the Library.
+- A Release workflow you can run by hand from the Actions tab.
+- The phone notification and lock screen controls now have like and close
+  buttons next to previous, play or pause and next, plus a seek bar.
+
+### Fixed
+- Android builds from GitHub now set up background playback and the media
+  notification, ask for internet access, and use the Swar app icon.
+- The round play button no longer shows a dark square behind it.
+- "Jump back in" on Home now updates as soon as a song starts.
+
+### Changed
+- The Jam tab is redesigned: start and join side by side, and inside a Jam
+  the song, invite code, queue and people sit in aligned panels.
+
 ## [0.2.0] - 2026-10-20
 
 ### Added

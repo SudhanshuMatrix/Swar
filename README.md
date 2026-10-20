@@ -39,11 +39,16 @@ The screenshots use sample songs and artwork.
 - A queue you can reorder, shuffle, repeat, and next-song recommendations that
   follow what you play and skip.
 - Radio started from any song.
-- Background playback with lock screen and media key controls.
+- Sleep timer: pause after a set time or at the end of the song.
+- Picks up where you left off: the queue, song and position come back
+  after a restart.
+- Background playback with lock screen and notification controls: like,
+  previous, play or pause, next and close.
 
 **Your library**
-- Liked songs, your own playlists and recently played songs, stored on the
-  device.
+- Liked songs, your own playlists, recently played and most played songs,
+  stored on the device.
+- Recent searches, one tap to search again.
 - Download songs for offline listening.
 
 **Jam**
@@ -206,6 +211,17 @@ attached and that changelog section as the release notes. If the changelog
 has no section for the new version, the workflow stops with an error that
 says so. Pushes that do not change the version only build.
 
+### Releasing by hand
+
+The Release workflow publishes a release without waiting for a push. In the
+Actions tab, choose Release, then Run workflow. It builds every platform from
+the chosen branch and publishes `v<version>` from `pubspec.yaml`, with that
+version's changelog section as the notes.
+
+- Replace: rebuilds and replaces a release that already exists.
+- Pre-release: publishes it as a pre-release, which the in-app update check
+  skips.
+
 To print the notes a release will get:
 
 ```bash
@@ -237,7 +253,7 @@ lib/
 server/         Go server: cmd/, internal/, migrations/, docs/
 packaging/      Linux .deb and Windows installer scripts
 scripts/        platform setup and changelog notes
-.github/        Build workflow and one workflow per platform
+.github/        Build and Release workflows, one workflow per platform
 docs/           screenshots
 test/           Flutter tests
 ```
