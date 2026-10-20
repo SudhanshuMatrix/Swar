@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/api_service.dart';
+import 'theme.dart';
 
 /// A mistake in what the user typed; its message is shown as is.
 class InputError implements Exception {
@@ -74,7 +75,7 @@ class ErrorPopup {
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.error_outline, color: Colors.redAccent, size: 36),
+          icon: const Icon(Icons.error_outline, color: SonivoColors.danger, size: 36),
           title: Text(title, textAlign: TextAlign.center),
           content: Text(friendlyError(error), textAlign: TextAlign.center),
           actionsAlignment: MainAxisAlignment.center,

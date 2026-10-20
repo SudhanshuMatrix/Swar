@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,6 +8,7 @@ import '../models/track.dart';
 import '../services/api_service.dart';
 import '../state/player_provider.dart';
 import '../widgets/track_tile.dart';
+import '../widgets/ui.dart';
 
 /// A singer found in search: loads their top songs and plays them.
 class ArtistScreen extends StatefulWidget {
@@ -54,55 +54,52 @@ class _ArtistScreenState extends State<ArtistScreen> {
     final p = widget.artist;
     return Scaffold(
       appBar: AppBar(title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
-      body: ListView(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(55),
-                  child: p.imageUrl.isNotEmpty
-                      ? CachedNetworkImage(imageUrl: p.imageUrl, width: 110, height: 110, fit: BoxFit.cover)
-                      : Container(width: 110, height: 110, color: Colors.grey[850]),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(p.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4),
-                      Text(
-                        _loading ? 'Loading…' : '${_tracks.length} songs',
-                        style: const TextStyle(color: SonivoColors.textSecondary),
-                      ),
-                      const SizedBox(height: 8),
-                      FilledButton.icon(
-                        onPressed: _tracks.isEmpty ? null : () => player.playQueue(_tracks, 0),
-                        icon: const Icon(Icons.play_arrow),
-                        label: const Text('Play all'),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (_loading) const LinearProgressIndicator(color: SonivoColors.accent),
-          if (_error != null)
+      body: PageWidth(
+        child: ListView(
+          children: [
             Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
+              padding: EdgeInsets.fromLTRB(Gaps.pagePadding(context), Gaps.sm, Gaps.pagePadding(context), Gaps.lg),
+              child: Row(
                 children: [
-                  Text(_error!, style: const TextStyle(color: Colors.redAccent)),
-                  TextButton(onPressed: _load, child: const Text('Try again')),
+                  Artwork(url: p.imageUrl, size: 140, circle: true, radius: Gaps.radiusLg, icon: Icons.person_rounded),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(p.name, style: Theme.of(context).textTheme.headlineSmall),
+                        const SizedBox(height: 4),
+                        Text(
+                          _loading ? 'Loading…' : '${_tracks.length} songs',
+                          style: const TextStyle(color: SonivoColors.textSecondary),
+                        ),
+                        const SizedBox(height: 8),
+                        FilledButton.icon(
+                          onPressed: _tracks.isEmpty ? null : () => player.playQueue(_tracks, 0),
+                          icon: const Icon(Icons.play_arrow),
+                          label: const Text('Play all'),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
-          for (var i = 0; i < _tracks.length; i++)
-            TrackTile(track: _tracks[i], onTap: () => player.playQueue(_tracks, i)),
-        ],
+            if (_loading) const LinearProgressIndicator(color: SonivoColors.accent),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Text(_error!, style: const TextStyle(color: SonivoColors.danger)),
+                    TextButton(onPressed: _load, child: const Text('Try again')),
+                  ],
+                ),
+              ),
+            for (var i = 0; i < _tracks.length; i++)
+              TrackTile(track: _tracks[i], onTap: () => player.playQueue(_tracks, i)),
+          ],
+        ),
       ),
     );
   }

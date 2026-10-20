@@ -6,6 +6,7 @@ import '../models/playlist.dart';
 import '../services/download_service.dart';
 import '../state/library_provider.dart';
 import '../state/player_provider.dart';
+import '../widgets/ui.dart';
 import 'downloads_screen.dart';
 import 'playlist_screen.dart';
 
@@ -70,7 +71,7 @@ class LibraryScreen extends StatelessWidget {
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            style: TextButton.styleFrom(foregroundColor: SonivoColors.danger),
             child: const Text('Delete'),
           ),
         ],
@@ -87,103 +88,105 @@ class LibraryScreen extends StatelessWidget {
     final player = context.read<PlayerProvider>();
 
     return SafeArea(
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Row(
-              children: [
-                const Expanded(
-                  child: Text('Your Library', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add, size: 28),
-                  tooltip: 'Create Playlist',
-                  onPressed: () => _createPlaylist(context),
-                ),
-              ],
+      bottom: false,
+      child: PageWidth(
+        child: Column(
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(Gaps.pagePadding(context), Gaps.xl, Gaps.pagePadding(context), Gaps.sm),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text('Your Library', style: Theme.of(context).textTheme.headlineMedium),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add, size: 28),
+                    tooltip: 'Create Playlist',
+                    onPressed: () => _createPlaylist(context),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Expanded(
-            child: ListView(
-              children: [
-                ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: SonivoColors.accent,
-                    child: Icon(Icons.favorite, color: Colors.black),
-                  ),
-                  title: const Text('Liked Songs', style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text(
-                    '${library.liked.length} ${library.liked.length == 1 ? "song" : "songs"}',
-                    style: const TextStyle(color: SonivoColors.textSecondary),
-                  ),
-                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => PlaylistScreen(title: 'Liked Songs', tracks: library.liked),
-                  )),
-                ),
-                ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: SonivoColors.surfaceHigh,
-                    child: Icon(Icons.download_done, color: SonivoColors.accent),
-                  ),
-                  title: const Text('Offline downloads', style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text(
-                    '${context.watch<DownloadService>().completedCount} songs on this device',
-                    style: const TextStyle(color: SonivoColors.textSecondary),
-                  ),
-                  onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DownloadsScreen())),
-                ),
-                const Divider(indent: 16, endIndent: 16),
-                ...library.playlists.map(
-                  (p) => ListTile(
+            Expanded(
+              child: ListView(
+                children: [
+                  ListTile(
                     leading: const CircleAvatar(
-                      backgroundColor: SonivoColors.surfaceHigh,
-                      child: Icon(Icons.queue_music, color: Colors.white70),
+                      backgroundColor: SonivoColors.accent,
+                      child: Icon(Icons.favorite, color: SonivoColors.onAccent),
                     ),
-                    title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    title: const Text('Liked Songs', style: TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
-                      '${p.tracks.length} ${p.tracks.length == 1 ? "song" : "songs"}',
+                      '${library.liked.length} ${library.liked.length == 1 ? "song" : "songs"}',
                       style: const TextStyle(color: SonivoColors.textSecondary),
                     ),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => PlaylistScreen(title: p.name, tracks: p.tracks, playlistId: p.id),
+                      builder: (_) => PlaylistScreen(title: 'Liked Songs', tracks: library.liked),
                     )),
-                    trailing: PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert, size: 20),
-                      onSelected: (action) {
-                        if (action == 'play' && p.tracks.isNotEmpty) {
-                          player.playQueue(p.tracks, 0);
-                        }
-                        if (action == 'rename') _renamePlaylist(context, p);
-                        if (action == 'delete') _deletePlaylist(context, p);
-                      },
-                      itemBuilder: (_) => [
-                        if (p.tracks.isNotEmpty)
-                          const PopupMenuItem(value: 'play', child: Text('Play')),
-                        const PopupMenuItem(value: 'rename', child: Text('Rename')),
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Delete', style: TextStyle(color: Colors.redAccent)),
-                        ),
-                      ],
-                    ),
                   ),
-                ),
-                if (library.playlists.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Center(
-                      child: Text(
-                        'No playlists yet.\nTap + at the top to create your first playlist.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.grey, height: 1.5),
+                  ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: SonivoColors.surfaceHigh,
+                      child: Icon(Icons.download_done, color: SonivoColors.accent),
+                    ),
+                    title: const Text('Offline downloads', style: TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(
+                      '${context.watch<DownloadService>().completedCount} songs on this device',
+                      style: const TextStyle(color: SonivoColors.textSecondary),
+                    ),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DownloadsScreen())),
+                  ),
+                  const Divider(indent: 16, endIndent: 16),
+                  ...library.playlists.map(
+                    (p) => ListTile(
+                      leading: const CircleAvatar(
+                        backgroundColor: SonivoColors.surfaceHigh,
+                        child: Icon(Icons.queue_music, color: SonivoColors.textSecondary),
+                      ),
+                      title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                        '${p.tracks.length} ${p.tracks.length == 1 ? "song" : "songs"}',
+                        style: const TextStyle(color: SonivoColors.textSecondary),
+                      ),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => PlaylistScreen(title: p.name, tracks: p.tracks, playlistId: p.id),
+                      )),
+                      trailing: PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert, size: 20),
+                        onSelected: (action) {
+                          if (action == 'play' && p.tracks.isNotEmpty) {
+                            player.playQueue(p.tracks, 0);
+                          }
+                          if (action == 'rename') _renamePlaylist(context, p);
+                          if (action == 'delete') _deletePlaylist(context, p);
+                        },
+                        itemBuilder: (_) => [
+                          if (p.tracks.isNotEmpty) const PopupMenuItem(value: 'play', child: Text('Play')),
+                          const PopupMenuItem(value: 'rename', child: Text('Rename')),
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Text('Delete', style: TextStyle(color: SonivoColors.danger)),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-              ],
+                  if (library.playlists.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(
+                        child: Text(
+                          'No playlists yet.\nTap + at the top to create your first playlist.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: SonivoColors.textSecondary, height: 1.5),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

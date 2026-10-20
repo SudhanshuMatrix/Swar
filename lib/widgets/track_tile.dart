@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,6 +6,7 @@ import '../core/theme.dart';
 import '../models/track.dart';
 import '../services/download_service.dart';
 import '../state/player_provider.dart';
+import 'ui.dart';
 
 class TrackTile extends StatelessWidget {
   final Track track;
@@ -24,46 +24,100 @@ class TrackTile extends StatelessWidget {
     this.showDownload = true,
   });
 
+  String _fmt(Duration d) {
+    if (d == Duration.zero) return '';
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '${d.inMinutes}:$s';
+  }
+
   @override
   Widget build(BuildContext context) {
     final isCurrent = context.select<PlayerProvider, bool>((p) => p.currentTrack?.id == track.id);
+    final wide = MediaQuery.sizeOf(context).width >= Gaps.desktopBreakpoint;
+    final side = Gaps.pagePadding(context) - Gaps.sm;
 
-    return ListTile(
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: track.thumbnailUrl.isNotEmpty
-            ? CachedNetworkImage(
-                imageUrl: track.thumbnailUrl,
-                width: 48,
-                height: 48,
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => Container(width: 48, height: 48, color: Colors.grey[800]),
-                placeholder: (_, __) => Container(width: 48, height: 48, color: Colors.grey[800]),
-              )
-            : Container(width: 48, height: 48, color: Colors.grey[800]),
-      ),
-      title: Text(
-        track.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: isCurrent ? SonivoColors.accent : Colors.white,
-          fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: side, vertical: 1),
+      child: Material(
+        color: isCurrent ? SonivoColors.accent.withOpacity(0.08) : Colors.transparent,
+        borderRadius: BorderRadius.circular(Gaps.radius),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(Gaps.radius),
+          hoverColor: SonivoColors.surfaceHigh,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Gaps.sm, vertical: 6),
+            child: Row(
+              children: [
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Artwork(url: track.thumbnailUrl, size: 48),
+                    if (isCurrent)
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.45),
+                          borderRadius: BorderRadius.circular(Gaps.radiusSm),
+                        ),
+                        child: const Icon(Icons.graphic_eq_rounded, color: SonivoColors.accent),
+                      ),
+                  ],
+                ),
+                const SizedBox(width: Gaps.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        track.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: isCurrent ? SonivoColors.accent : SonivoColors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        track.artist.isEmpty ? 'Unknown artist' : track.artist,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13, color: SonivoColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+                if (wide && track.album.isNotEmpty)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: Gaps.md),
+                      child: Text(
+                        track.album,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13, color: SonivoColors.textSecondary),
+                      ),
+                    ),
+                  ),
+                if (wide)
+                  SizedBox(
+                    width: 56,
+                    child: Text(
+                      _fmt(track.duration),
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(fontSize: 13, color: SonivoColors.textMuted),
+                    ),
+                  ),
+                if (showDownload) DownloadButton(track: track),
+                if (trailing != null) trailing!,
+              ],
+            ),
+          ),
         ),
       ),
-      subtitle: Text(
-        track.artist,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: Colors.grey),
-      ),
-      trailing: showDownload
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [DownloadButton(track: track), if (trailing != null) trailing!],
-            )
-          : trailing,
-      onTap: onTap,
     );
   }
 }
@@ -85,7 +139,7 @@ class DownloadButton extends StatelessWidget {
       case DownloadStatus.completed:
         return const Padding(
           padding: EdgeInsets.all(12),
-          child: Icon(Icons.download_done, color: SonivoColors.accent, size: 22),
+          child: Icon(Icons.download_done_rounded, color: SonivoColors.accent, size: 22),
         );
       case DownloadStatus.queued:
       case DownloadStatus.downloading:
@@ -106,13 +160,13 @@ class DownloadButton extends StatelessWidget {
       case DownloadStatus.paused:
         return IconButton(
           tooltip: 'Resume download',
-          icon: const Icon(Icons.play_for_work, color: Colors.white70),
+          icon: const Icon(Icons.play_for_work, color: SonivoColors.textSecondary),
           onPressed: () => _run(context, () => downloads.resume(track.id)),
         );
       default:
         return IconButton(
           tooltip: 'Download',
-          icon: const Icon(Icons.download_outlined, color: Colors.white70),
+          icon: const Icon(Icons.download_rounded, color: SonivoColors.textSecondary),
           onPressed: () => _run(context, () => downloads.download(track)),
         );
     }

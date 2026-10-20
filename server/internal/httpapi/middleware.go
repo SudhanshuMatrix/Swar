@@ -122,7 +122,8 @@ func (s *Server) limits(next http.Handler) http.Handler {
 		if r.Body != nil {
 			r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxBodyBytes)
 		}
-		if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		// WebSockets and relayed audio streams are long-lived by design.
+		if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") && !isRelayRequest(r) {
 			ctx, cancel := context.WithTimeout(r.Context(), s.cfg.RequestTimeout)
 			defer cancel()
 			r = r.WithContext(ctx)

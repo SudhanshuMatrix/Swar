@@ -155,14 +155,14 @@ class _DownloadTile extends StatelessWidget {
                 LinearProgressIndicator(
                   value: item.bytesTotal > 0 ? item.progress : null,
                   color: SonivoColors.accent,
-                  backgroundColor: Colors.white12,
+                  backgroundColor: SonivoColors.outline,
                 ),
               const SizedBox(height: 4),
               Text(
                 _statusText(),
                 style: TextStyle(
                   fontSize: 12,
-                  color: item.status == DownloadStatus.failed ? Colors.redAccent : SonivoColors.textSecondary,
+                  color: item.status == DownloadStatus.failed ? SonivoColors.danger : SonivoColors.textSecondary,
                 ),
               ),
             ],

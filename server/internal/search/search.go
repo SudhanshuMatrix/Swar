@@ -5,8 +5,10 @@ package search
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"swar/internal/catalog"
@@ -112,6 +114,9 @@ func (s *Service) Search(ctx context.Context, rawQuery string, typ Type, page, l
 		if err == nil {
 			cp := *p
 			cp.Results = dedupeBy(p.Results, func(a catalog.ArtistRef) string { return a.ID })
+			if typ == TypeArtists {
+				cp.Results = s.rankArtistsBySongs(ctx, cp.Results)
+			}
 			mu.Lock()
 			r.Artists = &cp
 			mu.Unlock()
@@ -143,6 +148,54 @@ func (s *Service) Search(ctx context.Context, rawQuery string, typ Type, page, l
 		r.Partial = true
 	}
 	return r, nil
+}
+
+// rankArtistsBySongs looks up how many songs each artist has, drops the
+// ones with none, and puts the biggest catalogs first. Artists whose count
+// could not be fetched are kept after the counted ones, so a slow upstream
+// never empties the list. Only the artists-only search pays for this.
+func (s *Service) rankArtistsBySongs(ctx context.Context, in []catalog.ArtistRef) []catalog.ArtistRef {
+	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+	out := make([]catalog.ArtistRef, len(in))
+	copy(out, in)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
+	for i := range out {
+		wg.Add(1)
+		go func(a *catalog.ArtistRef) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			p, err := s.cat.ArtistSongs(ctx, a.ID, catalog.ArtistOptions{})
+			if err != nil {
+				return
+			}
+			n := p.Total
+			if n < len(p.Results) {
+				n = len(p.Results)
+			}
+			a.SongCount = &n
+		}(&out[i])
+	}
+	wg.Wait()
+	kept := out[:0]
+	for _, a := range out {
+		if a.SongCount == nil || *a.SongCount > 0 {
+			kept = append(kept, a)
+		}
+	}
+	sort.SliceStable(kept, func(i, j int) bool {
+		ci, cj := -1, -1
+		if kept[i].SongCount != nil {
+			ci = *kept[i].SongCount
+		}
+		if kept[j].SongCount != nil {
+			cj = *kept[j].SongCount
+		}
+		return ci > cj
+	})
+	return kept
 }
 
 func safeMessage(err error) string {

@@ -168,7 +168,10 @@ class ApiService {
       throw _legacyError(res, 'Could not resolve audio');
     }
     final data = jsonDecode(res.body) as Map<String, dynamic>;
-    return StreamResult(url: data['audio_url'] as String, track: Track.fromJson(data));
+    var url = data['audio_url'] as String;
+    // Deep Search audio is relayed by the server and comes back as a path.
+    if (url.startsWith('/')) url = '$baseUrl$url';
+    return StreamResult(url: url, track: Track.fromJson(data));
   }
 
   Future<List<Track>> getRelated(String trackId) async {
@@ -186,7 +189,10 @@ class ApiService {
   /// server can follow the session's mood. Falls back to the simpler
   /// related list if the server is older.
   Future<List<Track>> recommendNext(String seedId,
-      {List<String> session = const [], List<String> skipped = const [], List<String> exclude = const [], int limit = 10}) async {
+      {List<String> session = const [],
+      List<String> skipped = const [],
+      List<String> exclude = const [],
+      int limit = 10}) async {
     try {
       final data = await _authed('POST', '/v1/recommendations/next', body: {
         'seedTrackId': seedId,
@@ -207,7 +213,8 @@ class ApiService {
 
   /// Tells the server a song was played or skipped; it uses this to rank
   /// future recommendations. Best effort.
-  Future<void> recordPlay(String trackId, {required DateTime startedAt, required Duration played, required bool skipped}) async {
+  Future<void> recordPlay(String trackId,
+      {required DateTime startedAt, required Duration played, required bool skipped}) async {
     await _authed('POST', '/v1/library/history', body: {
       'events': [
         {
@@ -236,10 +243,10 @@ class ApiService {
     final q = Uri(queryParameters: {'q': query, 'type': 'artists', 'limit': '$limit'}).query;
     final data = await _public('GET', '/v1/search?$q') as Map<String, dynamic>;
     final page = data['artists'] as Map<String, dynamic>?;
-    return ((page?['results'] as List?) ?? const [])
+    return rankArtists(((page?['results'] as List?) ?? const [])
         .whereType<Map<String, dynamic>>()
         .map(OnlineArtist.fromJson)
-        .toList();
+        .toList());
   }
 
   /// The artist's profile with their top songs.
@@ -258,7 +265,8 @@ class ApiService {
   /// Runs only when the user asks for it: the server starts yt-dlp for
   /// each call, so it is rate limited more strictly than normal search.
   Future<DeepSearchResult> deepSearch(String query, {int limit = 10}) async {
-    final data = await _public('POST', '/v1/search/deep', body: {'query': query, 'limit': limit}) as Map<String, dynamic>;
+    final data =
+        await _public('POST', '/v1/search/deep', body: {'query': query, 'limit': limit}) as Map<String, dynamic>;
     final results = ((data['results'] as List?) ?? const []).cast<Map<String, dynamic>>();
     return DeepSearchResult(results.map(Track.fromJson).toList(), (data['notice'] as String?) ?? '');
   }
@@ -268,7 +276,8 @@ class ApiService {
   /// Warms the server's cache for the next one or two tracks.
   Future<void> prefetch(List<String> trackIds, {bool dataSaver = false}) async {
     if (trackIds.isEmpty) return;
-    await _public('POST', '/v1/playback/prefetch', body: {'trackIds': trackIds.take(2).toList(), 'dataSaver': dataSaver});
+    await _public('POST', '/v1/playback/prefetch',
+        body: {'trackIds': trackIds.take(2).toList(), 'dataSaver': dataSaver});
   }
 
   // ---- Radio ----
@@ -286,7 +295,8 @@ class ApiService {
   // ---- Downloads ----
 
   Future<DownloadEligibility> downloadEligibility(String trackId) async {
-    final data = await _public('GET', '/v1/downloads/eligibility/${Uri.encodeComponent(trackId)}') as Map<String, dynamic>;
+    final data =
+        await _public('GET', '/v1/downloads/eligibility/${Uri.encodeComponent(trackId)}') as Map<String, dynamic>;
     String? url;
     final d = data['descriptor'];
     if (d is Map && d['sources'] is List) {
@@ -321,7 +331,8 @@ class ApiService {
 
   // ---- Swar Jam ----
 
-  Future<Map<String, dynamic>> createJam(String displayName, {bool allowParticipantAdd = true, bool allowVoting = false}) async {
+  Future<Map<String, dynamic>> createJam(String displayName,
+      {bool allowParticipantAdd = true, bool allowVoting = false}) async {
     return await _authed('POST', '/v1/jams', body: {
       'displayName': displayName,
       'settings': {'allowParticipantAdd': allowParticipantAdd, 'allowVoting': allowVoting},
@@ -329,7 +340,8 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> joinJam(String code, String displayName) async {
-    return await _authed('POST', '/v1/jams/join', body: {'code': code, 'displayName': displayName}) as Map<String, dynamic>;
+    return await _authed('POST', '/v1/jams/join', body: {'code': code, 'displayName': displayName})
+        as Map<String, dynamic>;
   }
 
   Future<void> leaveJam(String jamId) => _authed('POST', '/v1/jams/$jamId/leave');

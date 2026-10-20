@@ -2,17 +2,44 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../core/genres.dart';
 import '../core/theme.dart';
 import '../models/track.dart';
 import '../state/library_provider.dart';
 import '../state/player_provider.dart';
+import '../widgets/genre_card.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/player_bar.dart';
+import '../widgets/track_actions.dart';
 import '../widgets/track_tile.dart';
+import '../widgets/ui.dart';
 import 'jam_screen.dart';
 import 'library_screen.dart';
 import 'now_playing_screen.dart';
 import 'playlist_screen.dart';
 import 'search_screen.dart';
+
+class _Tab {
+  final String label;
+  final IconData icon;
+  final IconData selectedIcon;
+  const _Tab(this.label, this.icon, this.selectedIcon);
+}
+
+const _tabs = [
+  _Tab('Home', Icons.home_outlined, Icons.home_rounded),
+  _Tab('Search', Icons.search_rounded, Icons.search_rounded),
+  _Tab('Library', Icons.library_music_outlined, Icons.library_music_rounded),
+  _Tab('Jam', Icons.groups_outlined, Icons.groups_rounded),
+];
+
+/// True while the keyboard focus is in a text field, so shortcuts such as
+/// Space never steal keys the user is typing.
+bool isTyping() {
+  final ctx = FocusManager.instance.primaryFocus?.context;
+  if (ctx == null) return false;
+  return ctx.widget is EditableText || ctx.findAncestorWidgetOfExactType<EditableText>() != null;
+}
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -24,119 +51,278 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
+  // Each tab keeps its own page stack, so opening an artist or playlist
+  // keeps the sidebar, tabs and player in place.
+  final _navigators = List.generate(_tabs.length, (_) => GlobalKey<NavigatorState>());
+
   void _openNowPlaying() {
-    final track = context.read<PlayerProvider>().currentTrack;
-    if (track == null) return;
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NowPlayingScreen()));
+    if (context.read<PlayerProvider>().currentTrack == null) return;
+    Navigator.of(context, rootNavigator: true).push(PageRouteBuilder(
+      transitionDuration: const Duration(milliseconds: 280),
+      pageBuilder: (_, __, ___) => const NowPlayingScreen(),
+      transitionsBuilder: (_, anim, __, child) => SlideTransition(
+        position: Tween(begin: const Offset(0, 1), end: Offset.zero)
+            .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+        child: child,
+      ),
+    ));
   }
 
-  void _switchToTab(int tabIndex) {
-    setState(() => _index = tabIndex);
+  void _selectTab(int i) {
+    if (i == _index) {
+      // Tapping the open tab goes back to its first page.
+      _navigators[i].currentState?.popUntil((r) => r.isFirst);
+    }
+    setState(() => _index = i);
+  }
+
+  void _searchGenre(Genre g) {
+    _navigators[1].currentState?.popUntil((r) => r.isFirst);
+    setState(() => _index = 1);
+    SearchScreen.requests.value = null;
+    SearchScreen.requests.value = g.query;
+  }
+
+  void _openPlaylist(Widget page) {
+    final nav = _navigators[2].currentState;
+    setState(() => _index = 2);
+    nav?.popUntil((r) => r.isFirst);
+    nav?.push(MaterialPageRoute(builder: (_) => page));
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent || isTyping()) return KeyEventResult.ignored;
+    final player = context.read<PlayerProvider>();
+    final key = event.logicalKey;
+    final mod = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
+    if (key == LogicalKeyboardKey.space || key == LogicalKeyboardKey.mediaPlayPause) {
+      if (player.currentTrack == null) return KeyEventResult.ignored;
+      player.playPause();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.mediaTrackNext || (mod && key == LogicalKeyboardKey.arrowRight)) {
+      player.next();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.mediaTrackPrevious || (mod && key == LogicalKeyboardKey.arrowLeft)) {
+      player.previous();
+      return KeyEventResult.handled;
+    }
+    if (mod && key == LogicalKeyboardKey.keyF) {
+      _selectTab(1);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  Widget _tabNavigator(int i) {
+    final Widget root = switch (i) {
+      0 => _HomeTab(onExploreTap: () => _selectTab(1), onGenre: _searchGenre),
+      1 => const SearchScreen(),
+      2 => const LibraryScreen(),
+      _ => const JamScreen(),
+    };
+    return HeroControllerScope.none(
+      child: Navigator(
+        key: _navigators[i],
+        onGenerateRoute: (_) => MaterialPageRoute(
+          builder: (_) => Scaffold(backgroundColor: Colors.transparent, body: root),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final hasCurrentTrack = context.select<PlayerProvider, bool>((p) => p.currentTrack != null);
-    final pages = [
-      _HomeTab(onExploreTap: () => _switchToTab(1)),
-      const SearchScreen(),
-      const LibraryScreen(),
-      const JamScreen(),
-    ];
+    final wide = MediaQuery.sizeOf(context).width >= Gaps.desktopBreakpoint;
+    final body = IndexedStack(index: _index, children: List.generate(_tabs.length, _tabNavigator));
 
-    final player = context.read<PlayerProvider>();
-    // Keyboard control for desktop and web. Text fields keep their own
-    // space key, so typing a search is not affected.
-    final shortcuts = <ShortcutActivator, VoidCallback>{
-      const SingleActivator(LogicalKeyboardKey.space): () {
-        if (player.currentTrack != null) player.playPause();
-      },
-      const SingleActivator(LogicalKeyboardKey.mediaPlayPause): () {
-        if (player.currentTrack != null) player.playPause();
-      },
-      const SingleActivator(LogicalKeyboardKey.mediaTrackNext): player.next,
-      const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious): player.previous,
-      const SingleActivator(LogicalKeyboardKey.arrowRight, control: true): player.next,
-      const SingleActivator(LogicalKeyboardKey.arrowLeft, control: true): player.previous,
-      const SingleActivator(LogicalKeyboardKey.arrowRight, meta: true): player.next,
-      const SingleActivator(LogicalKeyboardKey.arrowLeft, meta: true): player.previous,
-    };
-
-    // Wide windows (desktop, web, tablets) get a side rail and a centered
-    // content column instead of stretched phone layouts.
-    final wide = MediaQuery.sizeOf(context).width >= 720;
-    final body = IndexedStack(index: _index, children: pages);
-    if (wide) {
-      return CallbackShortcuts(
-        bindings: shortcuts,
-        child: Focus(
-          autofocus: true,
-          child: Scaffold(
-            body: Row(
+    final Widget layout = wide
+        ? Scaffold(
+            body: Column(
               children: [
-                NavigationRail(
-                  selectedIndex: _index,
-                  onDestinationSelected: (i) => setState(() => _index = i),
-                  labelType: NavigationRailLabelType.all,
-                  backgroundColor: SonivoColors.surface,
-                  destinations: const [
-                    NavigationRailDestination(
-                        icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: Text('Home')),
-                    NavigationRailDestination(icon: Icon(Icons.search), label: Text('Search')),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.library_music_outlined),
-                      selectedIcon: Icon(Icons.library_music),
-                      label: Text('Library'),
-                    ),
-                    NavigationRailDestination(
-                        icon: Icon(Icons.groups_outlined), selectedIcon: Icon(Icons.groups), label: Text('Jam')),
-                  ],
-                ),
-                const VerticalDivider(width: 1),
                 Expanded(
-                  child: Center(
-                    child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 1000), child: body),
+                  child: Row(
+                    children: [
+                      _Sidebar(index: _index, onSelect: _selectTab, onOpenPlaylist: _openPlaylist),
+                      Expanded(
+                        child: DecoratedBox(
+                          decoration: const BoxDecoration(gradient: SonivoColors.pageGlow),
+                          child: body,
+                        ),
+                      ),
+                    ],
                   ),
+                ),
+                if (hasCurrentTrack) PlayerBar(onOpen: _openNowPlaying),
+              ],
+            ),
+          )
+        : Scaffold(
+            body: DecoratedBox(
+              decoration: const BoxDecoration(gradient: SonivoColors.pageGlow),
+              child: body,
+            ),
+            bottomNavigationBar: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (hasCurrentTrack) MiniPlayer(onOpen: _openNowPlaying),
+                NavigationBar(
+                  selectedIndex: _index,
+                  onDestinationSelected: _selectTab,
+                  destinations: [
+                    for (final t in _tabs)
+                      NavigationDestination(icon: Icon(t.icon), selectedIcon: Icon(t.selectedIcon), label: t.label),
+                  ],
                 ),
               ],
             ),
-            bottomNavigationBar: hasCurrentTrack
-                ? SafeArea(top: false, child: GestureDetector(onTap: _openNowPlaying, child: const MiniPlayer()))
-                : null,
-          ),
-        ),
-      );
-    }
+          );
 
-    return CallbackShortcuts(
-      bindings: shortcuts,
-      child: Focus(
-        autofocus: true,
-        child: Scaffold(
-          body: body,
-          bottomNavigationBar: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (hasCurrentTrack) GestureDetector(onTap: _openNowPlaying, child: const MiniPlayer()),
-                BottomNavigationBar(
-                  type: BottomNavigationBarType.fixed,
-                  currentIndex: _index,
-                  onTap: (i) => setState(() => _index = i),
-                  items: const [
-                    BottomNavigationBarItem(
-                        icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Home'),
-                    BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
-                    BottomNavigationBarItem(
-                      icon: Icon(Icons.library_music_outlined),
-                      activeIcon: Icon(Icons.library_music),
-                      label: 'Library',
+    // Back goes back inside the open tab before leaving the app.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        final nav = _navigators[_index].currentState;
+        if (nav != null && nav.canPop()) {
+          nav.pop();
+        } else if (_index != 0) {
+          setState(() => _index = 0);
+        } else {
+          SystemNavigator.pop();
+        }
+      },
+      child: Focus(autofocus: true, onKeyEvent: _onKey, child: layout),
+    );
+  }
+}
+
+class _Sidebar extends StatelessWidget {
+  final int index;
+  final ValueChanged<int> onSelect;
+  final void Function(Widget page) onOpenPlaylist;
+  const _Sidebar({required this.index, required this.onSelect, required this.onOpenPlaylist});
+
+  @override
+  Widget build(BuildContext context) {
+    final library = context.watch<LibraryProvider>();
+    return Container(
+      width: 256,
+      decoration: const BoxDecoration(
+        color: SonivoColors.surface,
+        border: Border(right: BorderSide(color: SonivoColors.outline)),
+      ),
+      child: SafeArea(
+        right: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(Gaps.xl, Gaps.xl, Gaps.xl, Gaps.xl),
+              child: Row(
+                children: [
+                  ClipOval(child: Image.asset('assets/brand/logo.png', width: 34, height: 34)),
+                  const SizedBox(width: Gaps.md),
+                  ShaderMask(
+                    shaderCallback: (r) => SonivoColors.brandGradient.createShader(r),
+                    child: const Text('Swar',
+                        style: TextStyle(
+                            fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.8, color: Colors.white)),
+                  ),
+                ],
+              ),
+            ),
+            for (var i = 0; i < _tabs.length; i++)
+              _SidebarItem(
+                icon: index == i ? _tabs[i].selectedIcon : _tabs[i].icon,
+                label: _tabs[i].label,
+                selected: index == i,
+                onTap: () => onSelect(i),
+              ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(Gaps.xl, Gaps.xl, Gaps.xl, Gaps.sm),
+              child: Text('YOUR MUSIC',
+                  style: TextStyle(
+                      fontSize: 11, letterSpacing: 1.4, fontWeight: FontWeight.w700, color: SonivoColors.textMuted)),
+            ),
+            _SidebarItem(
+              icon: Icons.favorite_rounded,
+              iconColor: SonivoColors.rose,
+              label: 'Liked Songs',
+              trailing: library.liked.isEmpty ? null : '${library.liked.length}',
+              onTap: () => onOpenPlaylist(PlaylistScreen(title: 'Liked Songs', tracks: library.liked)),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.only(bottom: Gaps.lg),
+                children: [
+                  for (final p in library.playlists)
+                    _SidebarItem(
+                      icon: Icons.queue_music_rounded,
+                      label: p.name,
+                      trailing: p.tracks.isEmpty ? null : '${p.tracks.length}',
+                      onTap: () => onOpenPlaylist(PlaylistScreen(title: p.name, tracks: p.tracks, playlistId: p.id)),
                     ),
-                    BottomNavigationBarItem(
-                        icon: Icon(Icons.groups_outlined), activeIcon: Icon(Icons.groups), label: 'Jam'),
-                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarItem extends StatelessWidget {
+  final IconData icon;
+  final Color? iconColor;
+  final String label;
+  final String? trailing;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SidebarItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.iconColor,
+    this.trailing,
+    this.selected = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Gaps.md, vertical: 2),
+      child: Material(
+        color: selected ? SonivoColors.accent.withOpacity(0.12) : Colors.transparent,
+        borderRadius: BorderRadius.circular(Gaps.radius),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(Gaps.radius),
+          hoverColor: SonivoColors.surfaceHigh,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Gaps.md, vertical: 11),
+            child: Row(
+              children: [
+                Icon(icon, size: 22, color: iconColor ?? (selected ? SonivoColors.accent : SonivoColors.textSecondary)),
+                const SizedBox(width: Gaps.md),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      color: selected ? SonivoColors.textPrimary : SonivoColors.textSecondary,
+                    ),
+                  ),
                 ),
+                if (trailing != null)
+                  Text(trailing!, style: const TextStyle(fontSize: 12, color: SonivoColors.textMuted)),
               ],
             ),
           ),
@@ -148,43 +334,14 @@ class _HomeShellState extends State<HomeShell> {
 
 class _HomeTab extends StatelessWidget {
   final VoidCallback onExploreTap;
-  const _HomeTab({required this.onExploreTap});
+  final ValueChanged<Genre> onGenre;
+  const _HomeTab({required this.onExploreTap, required this.onGenre});
 
-  String _getGreeting() {
+  String _greeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) return 'Good morning';
     if (hour < 18) return 'Good afternoon';
     return 'Good evening';
-  }
-
-  Future<void> _addToPlaylistDialog(BuildContext context, Track track) async {
-    final library = context.read<LibraryProvider>();
-    if (library.playlists.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No playlists yet. Create one in Library first.')),
-      );
-      return;
-    }
-    final playlistId = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('Add to playlist'),
-        children: library.playlists
-            .map((p) => SimpleDialogOption(
-                  onPressed: () => Navigator.pop(ctx, p.id),
-                  child: Text(p.name),
-                ))
-            .toList(),
-      ),
-    );
-    if (playlistId != null) {
-      await library.addToPlaylist(playlistId, track);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Added to playlist')),
-        );
-      }
-    }
   }
 
   @override
@@ -192,212 +349,261 @@ class _HomeTab extends StatelessWidget {
     final library = context.watch<LibraryProvider>();
     final player = context.read<PlayerProvider>();
     final isBrandNew = library.recent.isEmpty && library.liked.isEmpty && library.playlists.isEmpty;
+    final side = Gaps.pagePadding(context);
+    final width = MediaQuery.sizeOf(context).width;
 
     return SafeArea(
-      child: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            title: Text(
-              _getGreeting(),
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-            floating: true,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.search),
-                tooltip: 'Search',
-                onPressed: onExploreTap,
-              ),
-            ],
-          ),
-          if (library.playlists.isNotEmpty) ...[
+      bottom: false,
+      child: PageWidth(
+        child: CustomScrollView(
+          slivers: [
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: library.playlists.take(6).length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 8,
-                    mainAxisSpacing: 8,
-                    childAspectRatio: 3.2,
+                padding: EdgeInsets.fromLTRB(side, Gaps.xl, side, Gaps.sm),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_greeting(), style: Theme.of(context).textTheme.headlineMedium),
+                          const SizedBox(height: Gaps.xs),
+                          const Text('What do you want to hear today?',
+                              style: TextStyle(color: SonivoColors.textSecondary, fontSize: 15)),
+                        ],
+                      ),
+                    ),
+                    IconButton.filledTonal(
+                      icon: const Icon(Icons.search_rounded),
+                      tooltip: 'Search',
+                      onPressed: onExploreTap,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (isBrandNew) SliverToBoxAdapter(child: _WelcomeBanner(onExplore: onExploreTap)),
+            if (library.playlists.isNotEmpty || library.liked.isNotEmpty)
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(side, Gaps.lg, side, 0),
+                sliver: SliverGrid(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: width >= 1100 ? 3 : 2,
+                    crossAxisSpacing: Gaps.sm,
+                    mainAxisSpacing: Gaps.sm,
+                    mainAxisExtent: 60,
                   ),
-                  itemBuilder: (context, i) {
-                    final p = library.playlists[i];
-                    return InkWell(
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => PlaylistScreen(title: p.name, tracks: p.tracks, playlistId: p.id),
-                      )),
-                      borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF282828),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.queue_music, color: SonivoColors.accent, size: 22),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                p.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                              ),
-                            ),
-                          ],
-                        ),
+                  delegate: SliverChildListDelegate([
+                    if (library.liked.isNotEmpty)
+                      _QuickTile(
+                        title: 'Liked Songs',
+                        icon: Icons.favorite_rounded,
+                        gradient: const LinearGradient(colors: [SonivoColors.rose, SonivoColors.violet]),
+                        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => PlaylistScreen(title: 'Liked Songs', tracks: library.liked))),
+                      ),
+                    for (final p in library.playlists.take(5))
+                      _QuickTile(
+                        title: p.name,
+                        icon: Icons.queue_music_rounded,
+                        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => PlaylistScreen(title: p.name, tracks: p.tracks, playlistId: p.id),
+                        )),
+                      ),
+                  ]),
+                ),
+              ),
+            if (library.recent.isNotEmpty) ...[
+              const SliverToBoxAdapter(child: SectionHeader('Jump back in', subtitle: 'Songs you played recently')),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 214,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: EdgeInsets.symmetric(horizontal: side),
+                    itemCount: library.recent.length.clamp(0, 15),
+                    separatorBuilder: (_, __) => const SizedBox(width: Gaps.lg),
+                    itemBuilder: (context, i) => _CoverCard(
+                      track: library.recent[i],
+                      onTap: () => player.playQueue(library.recent, i),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            SliverToBoxAdapter(
+              child: SectionHeader(
+                'Discover',
+                subtitle: 'Moods and genres to explore',
+                action: TextButton(onPressed: onExploreTap, child: const Text('Browse all')),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 168,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: EdgeInsets.symmetric(horizontal: side),
+                  itemCount: genres.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: Gaps.md),
+                  itemBuilder: (context, i) => SizedBox(
+                    width: 168,
+                    child: GenreCard(genre: genres[i], onTap: () => onGenre(genres[i])),
+                  ),
+                ),
+              ),
+            ),
+            if (library.liked.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: SectionHeader(
+                  'Liked Songs',
+                  subtitle: '${library.liked.length} songs',
+                  action: TextButton.icon(
+                    onPressed: () => player.playQueue(library.liked, 0),
+                    icon: const Icon(Icons.play_arrow_rounded),
+                    label: const Text('Play all'),
+                  ),
+                ),
+              ),
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) {
+                    final t = library.liked[i];
+                    return TrackTile(
+                      track: t,
+                      onTap: () => player.playQueue(library.liked, i),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [LikeButton(track: t), TrackMenu(track: t, showLike: false)],
                       ),
                     );
                   },
+                  childCount: library.liked.length,
                 ),
               ),
-            ),
+            ],
+            const SliverToBoxAdapter(child: SizedBox(height: Gaps.xxl)),
           ],
-          if (isBrandNew)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: SonivoColors.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Welcome to Swar! 🎵',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Stream any song directly with background audio support and offline playlists.',
-                        style: TextStyle(color: SonivoColors.textSecondary, fontSize: 14),
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        onPressed: onExploreTap,
-                        icon: const Icon(Icons.search, color: Colors.black),
-                        label: const Text('Discover Music',
-                            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: SonivoColors.accent,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          if (library.recent.isNotEmpty) ...[
-            const _SectionHeader('Recently played'),
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, i) {
-                  final t = library.recent[i];
-                  return TrackTile(
-                    track: t,
-                    onTap: () => player.playQueue(library.recent, i),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _LikeButton(track: t),
-                        PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert, size: 20),
-                          onSelected: (action) {
-                            if (action == 'play_next') player.playNext(t);
-                            if (action == 'queue') player.addToQueue(t);
-                            if (action == 'playlist') _addToPlaylistDialog(context, t);
-                          },
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(value: 'play_next', child: Text('Play next')),
-                            PopupMenuItem(value: 'queue', child: Text('Add to queue')),
-                            PopupMenuItem(value: 'playlist', child: Text('Add to playlist')),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                },
-                childCount: library.recent.length,
-              ),
-            ),
-          ],
-          if (library.liked.isNotEmpty) ...[
-            const _SectionHeader('Liked Songs'),
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, i) {
-                  final t = library.liked[i];
-                  return TrackTile(
-                    track: t,
-                    onTap: () => player.playQueue(library.liked, i),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _LikeButton(track: t),
-                        PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert, size: 20),
-                          onSelected: (action) {
-                            if (action == 'play_next') player.playNext(t);
-                            if (action == 'queue') player.addToQueue(t);
-                            if (action == 'playlist') _addToPlaylistDialog(context, t);
-                          },
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(value: 'play_next', child: Text('Play next')),
-                            PopupMenuItem(value: 'queue', child: Text('Add to queue')),
-                            PopupMenuItem(value: 'playlist', child: Text('Add to playlist')),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                },
-                childCount: library.liked.length,
-              ),
-            ),
-          ],
-          const SliverToBoxAdapter(child: SizedBox(height: 32)),
-        ],
+        ),
       ),
     );
   }
 }
 
-class _SectionHeader extends StatelessWidget {
+class _WelcomeBanner extends StatelessWidget {
+  final VoidCallback onExplore;
+  const _WelcomeBanner({required this.onExplore});
+
+  @override
+  Widget build(BuildContext context) {
+    final side = Gaps.pagePadding(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(side, Gaps.lg, side, 0),
+      child: Container(
+        padding: const EdgeInsets.all(Gaps.xl),
+        decoration: BoxDecoration(
+          gradient: SonivoColors.brandGradient,
+          borderRadius: BorderRadius.circular(Gaps.radiusLg),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Welcome to Swar',
+                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.6, color: Colors.white)),
+            const SizedBox(height: Gaps.sm),
+            const Text(
+              'Stream any song, save it for offline, and listen together with Jam.',
+              style: TextStyle(color: Color(0xE6FFFFFF), fontSize: 15),
+            ),
+            const SizedBox(height: Gaps.lg),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: SonivoColors.onAccent),
+              onPressed: onExplore,
+              icon: const Icon(Icons.explore_rounded),
+              label: const Text('Start exploring'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickTile extends StatelessWidget {
   final String title;
-  const _SectionHeader(this.title);
+  final IconData icon;
+  final Gradient? gradient;
+  final VoidCallback onTap;
+  const _QuickTile({required this.title, required this.icon, required this.onTap, this.gradient});
 
   @override
   Widget build(BuildContext context) {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-        child: Text(title, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold)),
+    return Material(
+      color: SonivoColors.surfaceHigh,
+      borderRadius: BorderRadius.circular(Gaps.radius),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        hoverColor: SonivoColors.surfaceHigher,
+        child: Row(
+          children: [
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                gradient: gradient ??
+                    const LinearGradient(
+                      colors: [SonivoColors.surfaceHigher, SonivoColors.outline],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+              ),
+              child: Icon(icon, color: gradient == null ? SonivoColors.accent : Colors.white),
+            ),
+            const SizedBox(width: Gaps.md),
+            Expanded(
+              child: Text(title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _LikeButton extends StatelessWidget {
+class _CoverCard extends StatelessWidget {
   final Track track;
-  const _LikeButton({required this.track});
+  final VoidCallback onTap;
+  const _CoverCard({required this.track, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final library = context.watch<LibraryProvider>();
-    final liked = library.isLiked(track.id);
-    return IconButton(
-      icon: Icon(liked ? Icons.favorite : Icons.favorite_border, color: liked ? SonivoColors.accent : Colors.grey),
-      onPressed: () => library.toggleLiked(track),
+    return SizedBox(
+      width: 150,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(Gaps.radius),
+        child: Padding(
+          padding: const EdgeInsets.all(2),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Artwork(url: track.thumbnailUrl, size: 146, radius: Gaps.radius),
+              const SizedBox(height: Gaps.sm),
+              Text(track.title,
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text(track.artist,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: SonivoColors.textSecondary, fontSize: 12)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

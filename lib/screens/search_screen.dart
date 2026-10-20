@@ -1,23 +1,27 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/errors.dart';
+import '../core/genres.dart';
 import '../core/theme.dart';
 import '../models/online_artist.dart';
 import '../models/online_playlist.dart';
 import '../models/track.dart';
 import '../services/api_service.dart';
-import '../services/jam_service.dart';
-import '../state/library_provider.dart';
 import '../state/player_provider.dart';
+import '../widgets/genre_card.dart';
+import '../widgets/track_actions.dart';
 import '../widgets/track_tile.dart';
+import '../widgets/ui.dart';
 import 'artist_screen.dart';
 import 'deep_search_screen.dart';
 import 'online_playlist_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
+
+  /// Other screens set this to run a search, such as a Discover card.
+  static final requests = ValueNotifier<String?>(null);
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -34,23 +38,24 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _searched = false;
   String? _error;
 
-  static const _genres = [
-    _GenreItem('Top Hits', Icons.trending_up, Color(0xFFE91E63)),
-    _GenreItem('Pop', Icons.music_note, Color(0xFF9C27B0)),
-    _GenreItem('Rock', Icons.electric_bolt, Color(0xFFFF5722)),
-    _GenreItem('Hip-Hop', Icons.speaker, Color(0xFFFF9800)),
-    _GenreItem('Lofi & Chill', Icons.nightlight_round, Color(0xFF3F51B5)),
-    _GenreItem('Indie', Icons.nature_people, Color(0xFF009688)),
-    _GenreItem('Electronic', Icons.graphic_eq, Color(0xFF2196F3)),
-    _GenreItem('Jazz & Blues', Icons.wine_bar, Color(0xFF795548)),
-    _GenreItem('Acoustic', Icons.forest, Color(0xFF4CAF50)),
-    _GenreItem('Workout', Icons.fitness_center, Color(0xFFF44336)),
-    _GenreItem('Focus & Study', Icons.auto_stories, Color(0xFF607D8B)),
-    _GenreItem('Gaming', Icons.sports_esports, Color(0xFF673AB7)),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    SearchScreen.requests.addListener(_onRequest);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onRequest());
+  }
+
+  void _onRequest() {
+    final q = SearchScreen.requests.value;
+    if (q == null || !mounted) return;
+    SearchScreen.requests.value = null;
+    _controller.text = q;
+    _search(q);
+  }
 
   @override
   void dispose() {
+    SearchScreen.requests.removeListener(_onRequest);
     _controller.dispose();
     super.dispose();
   }
@@ -94,248 +99,157 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  Future<void> _addToPlaylistDialog(Track track) async {
-    final library = context.read<LibraryProvider>();
-    if (library.playlists.isEmpty) {
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('No playlists yet'),
-          content: const Text('Create a playlist from the Library tab first.'),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
-        ),
-      );
-      return;
-    }
-    final playlistId = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('Add to playlist'),
-        children: library.playlists
-            .map((p) => SimpleDialogOption(
-                  onPressed: () => Navigator.pop(ctx, p.id),
-                  child: Text(p.name),
-                ))
-            .toList(),
-      ),
-    );
-    if (playlistId != null) {
-      await library.addToPlaylist(playlistId, track);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Added to playlist')),
-        );
-      }
-    }
-  }
-
   void _openDeepSearch() {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => DeepSearchScreen(query: _controller.text.trim()),
     ));
   }
 
-  void _selectGenre(String genre) {
-    _controller.text = genre;
-    _search(genre);
+  void _selectGenre(Genre genre) {
+    _controller.text = genre.query;
+    _search(genre.query);
   }
 
   @override
   Widget build(BuildContext context) {
     final player = context.read<PlayerProvider>();
-    final library = context.watch<LibraryProvider>();
+    final side = Gaps.pagePadding(context);
 
     return SafeArea(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: TextField(
-              controller: _controller,
-              onSubmitted: _search,
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                hintText: 'Search songs, singers or playlists',
-                hintStyle: const TextStyle(color: SonivoColors.textSecondary, fontSize: 14),
-                prefixIcon: const Icon(Icons.search, color: Colors.white70),
-                filled: true,
-                fillColor: const Color(0xFF242424),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                suffixIcon: _controller.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, color: Colors.white70),
-                        onPressed: () {
-                          _controller.clear();
-                          setState(() {
-                            _results = [];
-                            _playlists = [];
-                            _artists = [];
-                            _searched = false;
-                            _error = null;
-                          });
-                        },
-                      )
-                    : null,
-              ),
-              onChanged: (text) {
-                if (text.isEmpty && (_results.isNotEmpty || _hasExtras)) {
-                  setState(() {
-                    _results = [];
-                    _playlists = [];
-                    _artists = [];
-                  });
-                }
-              },
-            ),
-          ),
-          if (_loading) const LinearProgressIndicator(color: SonivoColors.accent),
-          if (_error != null)
+      bottom: false,
+      child: PageWidth(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Padding(
-              padding: const EdgeInsets.all(16),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.error_outline, color: Colors.redAccent),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 13))),
-                  ],
-                ),
-              ),
+              padding: EdgeInsets.fromLTRB(side, Gaps.xl, side, Gaps.md),
+              child: Text('Search', style: Theme.of(context).textTheme.headlineMedium),
             ),
-          if (_searched && _results.isEmpty && !_hasExtras && !_loading)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Text('No results for "${_controller.text.trim()}".',
-                  style: const TextStyle(color: SonivoColors.textSecondary)),
-            ),
-          if (_searched && !_loading) _DeepSearchPrompt(onTap: _openDeepSearch),
-          Expanded(
-            child: _results.isEmpty && !_hasExtras && !_loading
-                ? _buildBrowseGenres()
-                : ListView.builder(
-                    itemCount: _results.length + (_hasExtras ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (_hasExtras && index == 0) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (_artists.isNotEmpty) _ArtistRow(artists: _artists),
-                            if (_playlists.isNotEmpty) _PlaylistRow(playlists: _playlists),
-                            if (_results.isNotEmpty) const _SectionTitle('Songs'),
-                          ],
-                        );
-                      }
-                      final i = _hasExtras ? index - 1 : index;
-                      final t = _results[i];
-                      final jam = context.read<JamController>();
-                      final isLiked = library.isLiked(t.id);
-                      return TrackTile(
-                        track: t,
-                        onTap: () => player.playQueue(_results, i),
-                        trailing: PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert),
-                          onSelected: (value) {
-                            if (value == 'play_next') player.playNext(t);
-                            if (value == 'queue') player.addToQueue(t);
-                            if (value == 'like') library.toggleLiked(t);
-                            if (value == 'playlist') _addToPlaylistDialog(t);
-                            if (value == 'radio') player.startRadio(t);
-                            if (value == 'jam') jam.addTrack(t);
+              padding: EdgeInsets.fromLTRB(side, 0, side, Gaps.sm),
+              child: TextField(
+                controller: _controller,
+                onSubmitted: _search,
+                textInputAction: TextInputAction.search,
+                style: const TextStyle(fontSize: 15),
+                decoration: InputDecoration(
+                  hintText: 'Songs, singers or playlists',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _controller.text.isNotEmpty
+                      ? IconButton(
+                          tooltip: 'Clear',
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () {
+                            _controller.clear();
+                            setState(() {
+                              _results = [];
+                              _playlists = [];
+                              _artists = [];
+                              _searched = false;
+                              _error = null;
+                            });
                           },
-                          itemBuilder: (_) => [
-                            const PopupMenuItem(value: 'play_next', child: Text('Play next')),
-                            const PopupMenuItem(value: 'queue', child: Text('Add to queue')),
-                            const PopupMenuItem(value: 'playlist', child: Text('Add to playlist')),
-                            PopupMenuItem(value: 'like', child: Text(isLiked ? 'Unlike' : 'Like')),
-                            const PopupMenuItem(value: 'radio', child: Text('Start radio')),
-                            if (jam.inJam && (jam.isAdmin || jam.allowParticipantAdd))
-                              const PopupMenuItem(value: 'jam', child: Text('Add to Jam')),
-                          ],
-                        ),
-                      );
-                    },
+                        )
+                      : null,
+                ),
+                onChanged: (text) {
+                  if (text.isEmpty && (_results.isNotEmpty || _hasExtras)) {
+                    setState(() {
+                      _results = [];
+                      _playlists = [];
+                      _artists = [];
+                    });
+                  } else {
+                    // Keeps the clear button in step with the text.
+                    setState(() {});
+                  }
+                },
+              ),
+            ),
+            if (_loading)
+              Padding(padding: EdgeInsets.symmetric(horizontal: side), child: const LinearProgressIndicator()),
+            if (_error != null)
+              Padding(
+                padding: EdgeInsets.fromLTRB(side, Gaps.sm, side, 0),
+                child: Container(
+                  padding: const EdgeInsets.all(Gaps.md),
+                  decoration: BoxDecoration(
+                    color: SonivoColors.danger.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(Gaps.radius),
+                    border: Border.all(color: SonivoColors.danger.withOpacity(0.3)),
                   ),
-          ),
-        ],
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline_rounded, color: SonivoColors.danger),
+                      const SizedBox(width: Gaps.sm),
+                      Expanded(child: Text(_error!, style: const TextStyle(color: SonivoColors.danger, fontSize: 13))),
+                    ],
+                  ),
+                ),
+              ),
+            if (_searched && _results.isEmpty && !_hasExtras && !_loading)
+              Padding(
+                padding: EdgeInsets.fromLTRB(side, Gaps.sm, side, 0),
+                child: Text('No results for "${_controller.text.trim()}".',
+                    style: const TextStyle(color: SonivoColors.textSecondary)),
+              ),
+            if (_searched && !_loading) _DeepSearchPrompt(onTap: _openDeepSearch),
+            Expanded(
+              child: _results.isEmpty && !_hasExtras && !_loading
+                  ? _buildBrowseGenres()
+                  : ListView.builder(
+                      padding: const EdgeInsets.only(bottom: Gaps.xl),
+                      itemCount: _results.length + (_hasExtras ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (_hasExtras && index == 0) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (_artists.isNotEmpty) _ArtistRow(artists: _artists),
+                              if (_playlists.isNotEmpty) _PlaylistRow(playlists: _playlists),
+                              if (_results.isNotEmpty) const SectionHeader('Songs'),
+                            ],
+                          );
+                        }
+                        final i = _hasExtras ? index - 1 : index;
+                        final t = _results[i];
+                        return TrackTile(
+                          track: t,
+                          onTap: () => player.playQueue(_results, i),
+                          trailing: TrackMenu(track: t),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildBrowseGenres() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Browse all',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _genres.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.8,
+    final side = Gaps.pagePadding(context);
+    return CustomScrollView(
+      slivers: [
+        const SliverToBoxAdapter(child: SectionHeader('Discover', subtitle: 'Pick a mood or genre')),
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(side, 0, side, Gaps.xl),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 220,
+              crossAxisSpacing: Gaps.md,
+              mainAxisSpacing: Gaps.md,
+              childAspectRatio: 1,
             ),
-            itemBuilder: (context, i) {
-              final g = _genres[i];
-              return InkWell(
-                onTap: () => _selectGenre(g.title),
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: g.color.withOpacity(0.85),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  padding: const EdgeInsets.all(12),
-                  child: Stack(
-                    children: [
-                      Text(
-                        g.title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Positioned(
-                        right: -4,
-                        bottom: -4,
-                        child: Transform.rotate(
-                          angle: 0.3,
-                          child: Icon(g.icon, size: 40, color: Colors.white.withOpacity(0.35)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
+            delegate: SliverChildBuilderDelegate(
+              (context, i) => GenreCard(genre: genres[i], onTap: () => _selectGenre(genres[i])),
+              childCount: genres.length,
+            ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
-}
-
-class _GenreItem {
-  final String title;
-  final IconData icon;
-  final Color color;
-  const _GenreItem(this.title, this.icon, this.color);
 }
 
 class _DeepSearchPrompt extends StatelessWidget {
@@ -344,13 +258,13 @@ class _DeepSearchPrompt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final side = Gaps.pagePadding(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+      padding: EdgeInsets.fromLTRB(side - Gaps.sm, Gaps.xs, side, 0),
       child: TextButton.icon(
         onPressed: onTap,
-        icon: const Icon(Icons.travel_explore, size: 18),
-        label: const Text("Didn't find your song? Try Deep Search."),
-        style: TextButton.styleFrom(foregroundColor: SonivoColors.accent),
+        icon: const Icon(Icons.travel_explore_rounded, size: 18),
+        label: const Text("Didn't find your song? Try Deep Search"),
       ),
     );
   }
@@ -363,44 +277,36 @@ class _PlaylistRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final side = Gaps.pagePadding(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionTitle('Playlists'),
+        const SectionHeader('Playlists'),
         SizedBox(
-          height: 190,
+          height: 200,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: EdgeInsets.symmetric(horizontal: side),
             itemCount: playlists.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            separatorBuilder: (_, __) => const SizedBox(width: Gaps.lg),
             itemBuilder: (context, i) {
               final p = playlists[i];
-              return GestureDetector(
+              return InkWell(
+                borderRadius: BorderRadius.circular(Gaps.radius),
                 onTap: () => Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => OnlinePlaylistScreen(playlist: p),
                 )),
                 child: SizedBox(
-                  width: 130,
+                  width: 140,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: p.imageUrl.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: p.imageUrl,
-                                width: 130,
-                                height: 130,
-                                fit: BoxFit.cover,
-                                errorWidget: (_, __, ___) => _placeholder(),
-                                placeholder: (_, __) => _placeholder(),
-                              )
-                            : _placeholder(),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      Artwork(url: p.imageUrl, size: 140, radius: Gaps.radius, icon: Icons.queue_music_rounded),
+                      const SizedBox(height: Gaps.sm),
+                      Text(p.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
                       if (p.songCount > 0)
                         Text('${p.songCount} songs',
                             style: const TextStyle(color: SonivoColors.textSecondary, fontSize: 12)),
@@ -414,60 +320,47 @@ class _PlaylistRow extends StatelessWidget {
       ],
     );
   }
-
-  Widget _placeholder() => Container(
-        width: 130,
-        height: 130,
-        color: Colors.grey[850],
-        child: const Icon(Icons.queue_music, color: Colors.white38, size: 40),
-      );
 }
 
-class _SectionTitle extends StatelessWidget {
-  final String text;
-  const _SectionTitle(this.text);
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-        child: Text(text, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-      );
-}
-
-/// Round singer photos above the results; tap one for their top songs.
+/// Round singer photos above the results, biggest catalogs first; tap one
+/// for their top songs.
 class _ArtistRow extends StatelessWidget {
   final List<OnlineArtist> artists;
   const _ArtistRow({required this.artists});
 
   @override
   Widget build(BuildContext context) {
+    final side = Gaps.pagePadding(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionTitle('Singers'),
+        const SectionHeader('Singers'),
         SizedBox(
-          height: 130,
+          height: 160,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: EdgeInsets.symmetric(horizontal: side),
             itemCount: artists.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 14),
+            separatorBuilder: (_, __) => const SizedBox(width: Gaps.lg),
             itemBuilder: (context, i) {
               final a = artists[i];
-              return GestureDetector(
+              return InkWell(
+                borderRadius: BorderRadius.circular(Gaps.radius),
                 onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ArtistScreen(artist: a))),
                 child: SizedBox(
-                  width: 92,
+                  width: 104,
                   child: Column(
                     children: [
-                      CircleAvatar(
-                        radius: 44,
-                        backgroundColor: Colors.grey[850],
-                        backgroundImage: a.imageUrl.isNotEmpty ? CachedNetworkImageProvider(a.imageUrl) : null,
-                        child: a.imageUrl.isEmpty ? const Icon(Icons.person, size: 40, color: Colors.white38) : null,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                      Artwork(url: a.imageUrl, size: 100, circle: true, icon: Icons.person_rounded),
+                      const SizedBox(height: Gaps.sm),
+                      Text(a.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      if (a.songCount != null)
+                        Text('${a.songCount} songs',
+                            style: const TextStyle(color: SonivoColors.textSecondary, fontSize: 12)),
                     ],
                   ),
                 ),

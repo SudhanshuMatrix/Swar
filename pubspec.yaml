@@ -1,5 +1,5 @@
 name: sonivo
-description: A free, cross-platform Spotify-like music player built with Flutter, powered by yt-dlp.
+description: Swar, a free cross-platform music player built with Flutter.
 publish_to: 'none'
 version: 0.1.0
 
@@ -35,3 +35,17 @@ flutter:
   uses-material-design: true
   assets:
     - .env
+    - assets/brand/
+    - assets/covers/
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.otf
+        - asset: assets/fonts/Inter-Medium.otf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.otf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.otf
+          weight: 700
+        - asset: assets/fonts/Inter-ExtraBold.otf
+          weight: 800

@@ -43,7 +43,7 @@ Endpoints marked 🔒 below need a token.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/v1/search?q=&type=all\|songs\|albums\|artists\|playlists&page=0&limit=10` | Unified search. Songs are de-duplicated (same ID, or same title + artists within ±2 s). `partial: true` with `errors` when some sections failed |
+| GET | `/v1/search?q=&type=all\|songs\|albums\|artists\|playlists&page=0&limit=10` | Unified search. Songs are de-duplicated (same ID, or same title + artists within ±2 s). `partial: true` with `errors` when some sections failed. With `type=artists`, each artist carries `songCount`; artists with no songs are dropped and the rest are sorted by song count |
 | POST | `/v1/search/deep` | `{"query": "text or YouTube link", "limit": 10}`. User-triggered only. Returns `{results: [{...track, source, confidence: "metadata_only"}], notice}` |
 | GET | `/v1/tracks?ids=a,b,c` | Batch, max 100 |
 | GET | `/v1/tracks/{id}` | |
@@ -81,6 +81,7 @@ A track looks like:
 |---|---|---|
 | GET | `/v1/playback/{id}` | Playback descriptor (below). Never audio bytes |
 | POST | `/v1/playback/{id}/invalidate` | Call when a stream URL failed (expired), then fetch again |
+| GET | `/v1/playback/{id}/audio` | Deep Search (YouTube) audio relayed by the server, with Range support. `/track/{id}` returns this path as `audio_url` for those tracks |
 | POST | `/v1/playback/prefetch` | `{"trackIds": [next, nextNext], "dataSaver": false}`. Resolves at most 2 (1 with data saver) in the background; a newer call cancels the previous one |
 
 ```json

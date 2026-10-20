@@ -87,3 +87,29 @@ func TestValidation(t *testing.T) {
 		t.Error("unknown type accepted")
 	}
 }
+
+func TestArtistSearchCountsSongs(t *testing.T) {
+	cat, _ := testkit.Catalog(t, testkit.Options{})
+	r, err := New(cat).Search(context.Background(), "arijit", TypeArtists, 0, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Artists == nil || len(r.Artists.Results) != 1 {
+		t.Fatalf("want one artist: %+v", r.Artists)
+	}
+	if c := r.Artists.Results[0].SongCount; c == nil || *c != 2 {
+		t.Fatalf("want song count 2, got %v", c)
+	}
+}
+
+func TestArtistSearchDropsArtistsWithoutSongs(t *testing.T) {
+	cat, f := testkit.Catalog(t, testkit.Options{})
+	f.Override("artist.getArtistMoreSong", map[string]any{"topSongs": map[string]any{"total": 0, "songs": []any{}}})
+	r, err := New(cat).Search(context.Background(), "arijit", TypeArtists, 0, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Artists == nil || len(r.Artists.Results) != 0 {
+		t.Fatalf("artist with no songs should be hidden: %+v", r.Artists.Results)
+	}
+}

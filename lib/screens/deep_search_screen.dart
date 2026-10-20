@@ -83,7 +83,6 @@ class _DeepSearchScreenState extends State<DeepSearchScreen> {
                 prefixIcon: const Icon(Icons.travel_explore),
                 suffixIcon: IconButton(icon: const Icon(Icons.arrow_forward), onPressed: _run),
                 filled: true,
-                fillColor: const Color(0xFF242424),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
               ),
             ),
@@ -98,7 +97,7 @@ class _DeepSearchScreenState extends State<DeepSearchScreen> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+              child: Text(_error!, style: const TextStyle(color: SonivoColors.danger)),
             ),
           if (_notice.isNotEmpty && _results.isNotEmpty)
             Padding(
@@ -128,10 +127,10 @@ class _DeepSearchScreenState extends State<DeepSearchScreen> {
                         _results.where((r) => r.playable).toList().indexOf(t));
                   },
                   trailing: t.playable
-                      ? const Icon(Icons.play_arrow, color: Colors.white70)
+                      ? const Icon(Icons.play_arrow, color: SonivoColors.textSecondary)
                       : const Tooltip(
                           message: 'Metadata only on this server',
-                          child: Icon(Icons.info_outline, color: Colors.white38),
+                          child: Icon(Icons.info_outline, color: SonivoColors.textMuted),
                         ),
                 );
               },

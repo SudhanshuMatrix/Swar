@@ -17,7 +17,15 @@ class JamScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final jam = context.watch<JamController>();
     return SafeArea(
-      child: jam.jamId == null ? const _JamLobby() : const _JamRoom(),
+      bottom: false,
+      child: Align(
+        alignment: Alignment.topCenter,
+        // Forms read best in a narrower column on wide windows.
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: jam.jamId == null ? const _JamLobby() : const _JamRoom(),
+        ),
+      ),
     );
   }
 }
@@ -88,9 +96,9 @@ class _JamLobbyState extends State<_JamLobby> {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(Gaps.xl, Gaps.xl, Gaps.xl, Gaps.xl),
       children: [
-        const Text('Swar Jam', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+        Text('Swar Jam', style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(height: 6),
         const Text(
           'Listen together in sync. Start a Jam and share the code, or join a friend\'s.',
@@ -136,7 +144,7 @@ class _JamLobbyState extends State<_JamLobby> {
         if (_error != null)
           Padding(
             padding: const EdgeInsets.only(top: 16),
-            child: Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+            child: Text(_error!, style: const TextStyle(color: SonivoColors.danger)),
           ),
       ],
     );
@@ -177,7 +185,7 @@ class _JamRoom extends StatelessWidget {
       JamConnection.connected => ('Connected', SonivoColors.accent),
       JamConnection.connecting => ('Connecting…', Colors.amber),
       JamConnection.reconnecting => ('Reconnecting…', Colors.amber),
-      JamConnection.offline => ('Offline', Colors.redAccent),
+      JamConnection.offline => ('Offline', SonivoColors.danger),
     };
 
     return ListView(
@@ -198,7 +206,7 @@ class _JamRoom extends StatelessWidget {
           ),
           trailing: jam.isAdmin
               ? TextButton(
-                  style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                  style: TextButton.styleFrom(foregroundColor: SonivoColors.danger),
                   onPressed: () => _guard(context, jam.end),
                   child: const Text('End Jam'),
                 )
@@ -223,7 +231,7 @@ class _JamRoom extends StatelessWidget {
         if (jam.lastError != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Text(jam.lastError!, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+            child: Text(jam.lastError!, style: const TextStyle(color: SonivoColors.danger, fontSize: 13)),
           ),
         _NowPlayingCard(jam: jam),
         const _SectionTitle('Up next'),
@@ -262,8 +270,7 @@ class _JamRoom extends StatelessWidget {
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (p.isAdmin)
-                  const Chip(label: Text('Admin'), visualDensity: VisualDensity.compact),
+                if (p.isAdmin) const Chip(label: Text('Admin'), visualDensity: VisualDensity.compact),
                 if (jam.isAdmin && !p.isAdmin)
                   IconButton(
                     tooltip: 'Remove from Jam',

@@ -1,12 +1,15 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/theme.dart';
 import '../state/player_provider.dart';
+import 'ui.dart';
 
-/// Persistent bottom bar, Spotify-style — tap it to open the full player.
+/// Floating player card above the bottom navigation on phones. Tap it to
+/// open the full player.
 class MiniPlayer extends StatelessWidget {
-  const MiniPlayer({super.key});
+  final VoidCallback onOpen;
+  const MiniPlayer({super.key, required this.onOpen});
 
   @override
   Widget build(BuildContext context) {
@@ -14,49 +17,65 @@ class MiniPlayer extends StatelessWidget {
     final track = player.currentTrack;
     if (track == null) return const SizedBox.shrink();
 
-    final progress = player.duration.inMilliseconds == 0
-        ? 0.0
-        : player.position.inMilliseconds / player.duration.inMilliseconds;
+    final progress =
+        player.duration.inMilliseconds == 0 ? 0.0 : player.position.inMilliseconds / player.duration.inMilliseconds;
 
-    return Material(
-      color: const Color(0xFF282828),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          LinearProgressIndicator(
-            value: progress.clamp(0, 1),
-            minHeight: 2.5,
-            color: const Color(0xFF1DB954),
-            backgroundColor: Colors.grey[800],
-          ),
-          ListTile(
-            dense: true,
-            leading: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: track.thumbnailUrl.isNotEmpty
-                  ? CachedNetworkImage(imageUrl: track.thumbnailUrl, width: 40, height: 40, fit: BoxFit.cover)
-                  : Container(width: 40, height: 40, color: Colors.grey[800]),
-            ),
-            title: Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text(track.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: player.loading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(player.playing ? Icons.pause : Icons.play_arrow),
-                  onPressed: player.loading ? null : player.playPause,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Gaps.sm, 0, Gaps.sm, Gaps.sm),
+      child: Material(
+        color: SonivoColors.surfaceHigher,
+        borderRadius: BorderRadius.circular(Gaps.radius),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onOpen,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Gaps.sm, Gaps.sm, Gaps.xs, Gaps.sm),
+                child: Row(
+                  children: [
+                    Hero(tag: 'now-playing-art', child: Artwork(url: track.thumbnailUrl, size: 44)),
+                    const SizedBox(width: Gaps.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(track.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                          const SizedBox(height: 2),
+                          Text(track.artist,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: SonivoColors.textSecondary, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    GradientPlayButton(
+                      size: 40,
+                      playing: player.playing,
+                      loading: player.loading,
+                      onPressed: player.playPause,
+                    ),
+                    IconButton(
+                      tooltip: 'Next',
+                      icon: const Icon(Icons.skip_next_rounded),
+                      onPressed: player.next,
+                    ),
+                  ],
                 ),
-                IconButton(icon: const Icon(Icons.skip_next), onPressed: player.next),
-              ],
-            ),
+              ),
+              LinearProgressIndicator(
+                value: progress.clamp(0, 1).toDouble(),
+                minHeight: 2,
+                color: SonivoColors.accent,
+                backgroundColor: SonivoColors.outline,
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

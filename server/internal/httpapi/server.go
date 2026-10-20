@@ -114,6 +114,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	// Playback, queue, recommendations, radio.
 	mux.HandleFunc("GET /v1/playback/{id}", s.handlePlayback)
 	mux.HandleFunc("POST /v1/playback/{id}/invalidate", s.handlePlaybackInvalidate)
+	mux.HandleFunc("GET /v1/playback/{id}/audio", s.handlePlaybackAudio)
 	mux.HandleFunc("POST /v1/playback/prefetch", s.handlePrefetch)
 	mux.HandleFunc("GET /v1/queue", s.requireDevice(s.handleGetQueue))
 	mux.HandleFunc("PUT /v1/queue", s.requireDevice(s.handleReplaceQueue))

@@ -6,6 +6,7 @@ import '../models/track.dart';
 import '../state/library_provider.dart';
 import '../state/player_provider.dart';
 import '../widgets/track_tile.dart';
+import '../widgets/ui.dart';
 
 class PlaylistScreen extends StatelessWidget {
   final String title;
@@ -71,7 +72,7 @@ class PlaylistScreen extends StatelessWidget {
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            style: TextButton.styleFrom(foregroundColor: SonivoColors.danger),
             child: const Text('Delete'),
           ),
         ],
@@ -96,123 +97,126 @@ class PlaylistScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(title),
         actions: [
           if (!isLikedSongs && playlistId != null)
             IconButton(
-              icon: const Icon(Icons.delete_outline),
+              icon: const Icon(Icons.delete_outline_rounded),
               tooltip: 'Delete playlist',
               onPressed: () => _deletePlaylist(context),
             ),
         ],
       ),
       body: tracks.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isLikedSongs ? Icons.favorite_border : Icons.music_note,
-                    size: 64,
-                    color: Colors.grey[700],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    isLikedSongs ? 'No liked songs yet' : 'This playlist is empty',
-                    style: const TextStyle(color: Colors.grey, fontSize: 18),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Search for songs and add them here',
-                    style: TextStyle(color: Colors.grey, fontSize: 13),
-                  ),
-                ],
-              ),
+          ? EmptyState(
+              icon: isLikedSongs ? Icons.favorite_border_rounded : Icons.music_note_rounded,
+              title: isLikedSongs ? 'No liked songs yet' : '$title is empty',
+              message: 'Search for songs and add them here.',
             )
-          : CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${tracks.length} ${tracks.length == 1 ? "song" : "songs"} • ${_formatTotalDuration(tracks)}',
-                          style: const TextStyle(color: Colors.grey, fontSize: 14),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            ElevatedButton.icon(
-                              onPressed: () => player.playQueue(tracks, 0),
-                              icon: const Icon(Icons.play_arrow, color: Colors.black),
-                              label: const Text('Play', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: SonivoColors.accent,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                              ),
+          : PageWidth(
+              child: CustomScrollView(
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(Gaps.pagePadding(context), 0, Gaps.pagePadding(context), Gaps.lg),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Container(
+                            width: 132,
+                            height: 132,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(Gaps.radiusLg),
+                              gradient: isLikedSongs
+                                  ? const LinearGradient(colors: [SonivoColors.rose, SonivoColors.violet])
+                                  : SonivoColors.brandGradient,
                             ),
-                            const SizedBox(width: 12),
-                            OutlinedButton.icon(
-                              onPressed: () {
-                                if (tracks.isEmpty) return;
-                                final shuffled = List<Track>.of(tracks)..shuffle();
-                                player.playQueue(shuffled, 0);
-                              },
-                              icon: const Icon(Icons.shuffle, color: Colors.white),
-                              label: const Text('Shuffle', style: TextStyle(color: Colors.white)),
-                              style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: Colors.grey),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              ),
+                            child: Icon(isLikedSongs ? Icons.favorite_rounded : Icons.queue_music_rounded,
+                                size: 56, color: Colors.white),
+                          ),
+                          const SizedBox(width: Gaps.lg),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(isLikedSongs ? 'COLLECTION' : 'PLAYLIST',
+                                    style: const TextStyle(
+                                        fontSize: 11, letterSpacing: 1.4, color: SonivoColors.textSecondary)),
+                                const SizedBox(height: Gaps.xs),
+                                Text(title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context).textTheme.headlineMedium),
+                                const SizedBox(height: Gaps.xs),
+                                Text(
+                                  '${tracks.length} ${tracks.length == 1 ? "song" : "songs"} • ${_formatTotalDuration(tracks)}',
+                                  style: const TextStyle(color: SonivoColors.textSecondary, fontSize: 14),
+                                ),
+                                const SizedBox(height: Gaps.md),
+                                Row(
+                                  children: [
+                                    GradientPlayButton(
+                                      size: 48,
+                                      playing: false,
+                                      onPressed: () => player.playQueue(tracks, 0),
+                                    ),
+                                    const SizedBox(width: Gaps.sm),
+                                    IconButton.filledTonal(
+                                      tooltip: 'Shuffle',
+                                      icon: const Icon(Icons.shuffle_rounded),
+                                      onPressed: () {
+                                        final shuffled = List<Track>.of(tracks)..shuffle();
+                                        player.playQueue(shuffled, 0);
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) {
-                      final t = tracks[i];
-                      final isLiked = library.isLiked(t.id);
-                      return TrackTile(
-                        track: t,
-                        onTap: () => player.playQueue(tracks, i),
-                        trailing: PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert),
-                          onSelected: (action) {
-                            if (action == 'play_next') player.playNext(t);
-                            if (action == 'queue') player.addToQueue(t);
-                            if (action == 'like') library.toggleLiked(t);
-                            if (action == 'add_playlist') _addToAnotherPlaylistDialog(context, t);
-                            if (action == 'remove' && playlistId != null) {
-                              library.removeFromPlaylist(playlistId!, t.id);
-                            }
-                          },
-                          itemBuilder: (_) => [
-                            const PopupMenuItem(value: 'play_next', child: Text('Play next')),
-                            const PopupMenuItem(value: 'queue', child: Text('Add to queue')),
-                            PopupMenuItem(value: 'like', child: Text(isLiked ? 'Unlike' : 'Like')),
-                            const PopupMenuItem(value: 'add_playlist', child: Text('Add to other playlist')),
-                            if (playlistId != null)
-                              const PopupMenuItem(
-                                value: 'remove',
-                                child: Text('Remove from this playlist', style: TextStyle(color: Colors.redAccent)),
-                              ),
-                          ],
-                        ),
-                      );
-                    },
-                    childCount: tracks.length,
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, i) {
+                        final t = tracks[i];
+                        final isLiked = library.isLiked(t.id);
+                        return TrackTile(
+                          track: t,
+                          onTap: () => player.playQueue(tracks, i),
+                          trailing: PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert),
+                            onSelected: (action) {
+                              if (action == 'play_next') player.playNext(t);
+                              if (action == 'queue') player.addToQueue(t);
+                              if (action == 'like') library.toggleLiked(t);
+                              if (action == 'add_playlist') _addToAnotherPlaylistDialog(context, t);
+                              if (action == 'remove' && playlistId != null) {
+                                library.removeFromPlaylist(playlistId!, t.id);
+                              }
+                            },
+                            itemBuilder: (_) => [
+                              const PopupMenuItem(value: 'play_next', child: Text('Play next')),
+                              const PopupMenuItem(value: 'queue', child: Text('Add to queue')),
+                              PopupMenuItem(value: 'like', child: Text(isLiked ? 'Unlike' : 'Like')),
+                              const PopupMenuItem(value: 'add_playlist', child: Text('Add to other playlist')),
+                              if (playlistId != null)
+                                const PopupMenuItem(
+                                  value: 'remove',
+                                  child:
+                                      Text('Remove from this playlist', style: TextStyle(color: SonivoColors.danger)),
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                      childCount: tracks.length,
+                    ),
                   ),
-                ),
-                const SliverToBoxAdapter(child: SizedBox(height: 32)),
-              ],
+                  const SliverToBoxAdapter(child: SizedBox(height: 32)),
+                ],
+              ),
             ),
     );
   }

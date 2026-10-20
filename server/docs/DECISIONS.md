@@ -8,7 +8,7 @@ The prompt says "Do not bypass DRM, access controls, licensing, or source restri
 - **Downloads** (`SAAVN_DOWNLOADS_ENABLED`, `DEEPSEARCH_DOWNLOADS_ENABLED`). Even when on, a Saavn track is only eligible when the provider's own rights field marks it `cacheable`. Every eligibility answer carries a reason (`provider_rights_disallow`, `downloads_not_enabled_for_source`, `operator_permitted`, ...).
 - **Deep Search** finds metadata only by default. Resolving its results to stream URLs (`DEEPSEARCH_PLAYBACK_ENABLED`) is a separate switch. yt-dlp formats that report DRM are skipped, and private or region-locked videos are reported as unavailable rather than worked around.
 
-The server never proxies, re-encodes or stores audio. It hands the client a descriptor and the client fetches from the source.
+The server never re-encodes or stores audio. For Saavn it hands the client a descriptor and the client fetches from the source. Deep Search audio (only when `DEEPSEARCH_PLAYBACK_ENABLED` is on) is the one exception: YouTube signs each stream URL for the IP address that asked for it, which is the server, so `/track/{id}` returns the relay path `/v1/playback/{id}/audio` and the server streams the bytes through, passing Range requests along. The relay only fetches `*.googlevideo.com` URLs it resolved itself.
 
 ## Architecture
 

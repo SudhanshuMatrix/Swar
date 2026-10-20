@@ -81,6 +81,8 @@ type ArtistRef struct {
 	Role  string  `json:"role,omitempty"`
 	URL   string  `json:"url,omitempty"`
 	Image []Image `json:"image"`
+	// SongCount is filled by artist search; nil means it was not looked up.
+	SongCount *int `json:"songCount,omitempty"`
 }
 
 type AlbumRef struct {

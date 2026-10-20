@@ -122,6 +122,10 @@ func (s *Server) legacyResolve(w http.ResponseWriter, r *http.Request, wantVideo
 		writeJSON(w, http.StatusForbidden, map[string]any{"error": "no playable audio source", "code": "unavailable"})
 		return
 	}
+	if needsRelay(t) {
+		// Relative: the client joins it to its own server address.
+		audio = relayPath(t.ID)
+	}
 	resp := map[string]any{
 		"id": t.ID, "title": t.Title, "artist": t.ArtistNames(), "thumbnail": catalog.BestImage(t.Images),
 		"duration": t.DurationSec, "audio_url": audio, "expires_at": d.ExpiresAt,
