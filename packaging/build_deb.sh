@@ -27,14 +27,22 @@ Terminal=false
 StartupWMClass=com.sonivo.swar
 DESKTOP
 
+# Ubuntu 24.04+ (and Lubuntu) renamed libgtk-3-0 to libgtk-3-0t64. apt
+# accepts the old name through "Provides", but graphical installers such as
+# Lubuntu's Package Installer do not, so both real names are listed.
+# libmpv2 is on 24.04 and newer, libmpv1 on 22.04.
+INSTALLED_KB=$(du -sk "$ROOT/opt" | cut -f1)
+
 cat > "$ROOT/DEBIAN/control" <<CONTROL
 Package: swar
 Version: ${VERSION}
 Section: sound
 Priority: optional
 Architecture: amd64
-Maintainer: Swar
-Depends: libgtk-3-0, libmpv2 | libmpv1
+Maintainer: Swar <swar@users.noreply.github.com>
+Installed-Size: ${INSTALLED_KB}
+Depends: libgtk-3-0t64 | libgtk-3-0, libmpv2 | libmpv1
+Homepage: https://github.com/SudhanshuMatrix/Swar
 Description: Swar music player
  Stream music, play radio, listen together with Jam and keep songs offline.
 CONTROL
