@@ -1,0 +1,32 @@
+name: Windows
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+env:
+  API_BASE_URL: ${{ vars.API_BASE_URL }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          platforms: windows
+      - run: flutter build windows --release
+      - name: Make installer and zip
+        run: |
+          export SWAR_VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
+          mkdir -p dist
+          choco install innosetup -y --no-progress >/dev/null || true
+          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" packaging/swar.iss
+          (cd build/windows/x64/runner/Release && 7z a -tzip "$GITHUB_WORKSPACE/dist/Swar-Windows-$SWAR_VERSION.zip" . >/dev/null)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swar-windows
+          path: dist/*

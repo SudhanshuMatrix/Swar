@@ -7,6 +7,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
+import '../core/errors.dart';
 import '../models/track.dart';
 import 'api_service.dart';
 
@@ -265,7 +266,7 @@ class DownloadService extends ChangeNotifier {
       if (job.canceled) return;
       item
         ..status = DownloadStatus.failed
-        ..error = e is ApiException ? e.message : 'Download failed: $e';
+        ..error = friendlyError(e);
       await _save(item);
       await _report(item);
     } finally {

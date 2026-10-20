@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/errors.dart';
 import '../core/theme.dart';
 import '../models/online_playlist.dart';
 import '../models/track.dart';
@@ -40,7 +41,8 @@ class _OnlinePlaylistScreenState extends State<OnlinePlaylistScreen> {
       setState(() => _tracks = p.tracks.where((t) => t.playable).toList());
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'Could not load this playlist ($e)');
+      setState(() => _error = friendlyError(e));
+      ErrorPopup.show(e, title: "Couldn't open this playlist", onRetry: _load);
     } finally {
       if (mounted) setState(() => _loading = false);
     }

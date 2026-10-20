@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/errors.dart';
 import '../core/theme.dart';
 import '../services/download_service.dart';
 import '../state/player_provider.dart';
@@ -98,9 +99,7 @@ class _DownloadTile extends StatelessWidget {
     try {
       await action();
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-      }
+      ErrorPopup.show(e, title: 'Download problem');
     }
   }
 

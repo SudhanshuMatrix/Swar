@@ -108,14 +108,14 @@ Server-side queue per device, so it survives reinstalls and can follow the user 
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/v1/recommendations/next` | `{"seedTrackId", "exclude": [], "playlistContext": [], "limit": 20}` → `{seed, results: [{track, score, reasons: [...]}], sources, degraded}` |
+| POST | `/v1/recommendations/next` | `{"seedTrackId", "exclude": [], "playlistContext": [], "session": [], "skipped": [], "limit": 20}` (`session`: tracks played earlier this session, newest first; `skipped`: tracks skipped this session) → `{seed, results: [{track, score, reasons: [...]}], sources, degraded}` |
 | POST | `/v1/radio` | `{"kind": "song\|artist\|album\|personalized\|genre\|discovery", "seed": "...", "count": 10}` |
 | GET | `/v1/radio/{id}` | |
 | POST | `/v1/radio/{id}/next` | `{"count": 10}` |
 | POST | `/v1/radio/{id}/feedback` | `{"trackId", "action": "like\|dislike\|skip"}` |
 | DELETE | `/v1/radio/{id}` | |
 
-Every recommendation carries `reasons` (`provider_related`, `same_artist`, `liked_artist`, `preferred_language`, `recently_played`, `often_skipped`, ...). Radio sessions carry `generation`, one of `provider_station_ranked`, `swar_recommendations`, `catalog_search`, `random_discovery`, so the app can label honestly how a station was built. `personalized` needs a device token and falls back to `discovery` without history.
+Every recommendation carries `reasons` (`provider_related`, `same_artist`, `liked_artist`, `preferred_language`, `recently_played`, `often_skipped`, `session_related`, `session_artist`, `skipped_this_session`, `same_era`, ...). Radio sessions carry `generation`, one of `provider_station_ranked`, `swar_recommendations`, `catalog_search`, `random_discovery`, so the app can label honestly how a station was built. `personalized` needs a device token and falls back to `discovery` without history.
 
 ## Library 🔒
 

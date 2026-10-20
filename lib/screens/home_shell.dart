@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../core/theme.dart';
@@ -43,31 +44,102 @@ class _HomeShellState extends State<HomeShell> {
       const JamScreen(),
     ];
 
-    return Scaffold(
-      body: IndexedStack(index: _index, children: pages),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (hasCurrentTrack)
-              GestureDetector(onTap: _openNowPlaying, child: const MiniPlayer()),
-            BottomNavigationBar(
-              type: BottomNavigationBarType.fixed,
-              currentIndex: _index,
-              onTap: (i) => setState(() => _index = i),
-              items: const [
-                BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Home'),
-                BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.library_music_outlined),
-                  activeIcon: Icon(Icons.library_music),
-                  label: 'Library',
+    final player = context.read<PlayerProvider>();
+    // Keyboard control for desktop and web. Text fields keep their own
+    // space key, so typing a search is not affected.
+    final shortcuts = <ShortcutActivator, VoidCallback>{
+      const SingleActivator(LogicalKeyboardKey.space): () {
+        if (player.currentTrack != null) player.playPause();
+      },
+      const SingleActivator(LogicalKeyboardKey.mediaPlayPause): () {
+        if (player.currentTrack != null) player.playPause();
+      },
+      const SingleActivator(LogicalKeyboardKey.mediaTrackNext): player.next,
+      const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious): player.previous,
+      const SingleActivator(LogicalKeyboardKey.arrowRight, control: true): player.next,
+      const SingleActivator(LogicalKeyboardKey.arrowLeft, control: true): player.previous,
+      const SingleActivator(LogicalKeyboardKey.arrowRight, meta: true): player.next,
+      const SingleActivator(LogicalKeyboardKey.arrowLeft, meta: true): player.previous,
+    };
+
+    // Wide windows (desktop, web, tablets) get a side rail and a centered
+    // content column instead of stretched phone layouts.
+    final wide = MediaQuery.sizeOf(context).width >= 720;
+    final body = IndexedStack(index: _index, children: pages);
+    if (wide) {
+      return CallbackShortcuts(
+        bindings: shortcuts,
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
+            body: Row(
+              children: [
+                NavigationRail(
+                  selectedIndex: _index,
+                  onDestinationSelected: (i) => setState(() => _index = i),
+                  labelType: NavigationRailLabelType.all,
+                  backgroundColor: SonivoColors.surface,
+                  destinations: const [
+                    NavigationRailDestination(
+                        icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: Text('Home')),
+                    NavigationRailDestination(icon: Icon(Icons.search), label: Text('Search')),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.library_music_outlined),
+                      selectedIcon: Icon(Icons.library_music),
+                      label: Text('Library'),
+                    ),
+                    NavigationRailDestination(
+                        icon: Icon(Icons.groups_outlined), selectedIcon: Icon(Icons.groups), label: Text('Jam')),
+                  ],
                 ),
-                BottomNavigationBarItem(icon: Icon(Icons.groups_outlined), activeIcon: Icon(Icons.groups), label: 'Jam'),
+                const VerticalDivider(width: 1),
+                Expanded(
+                  child: Center(
+                    child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 1000), child: body),
+                  ),
+                ),
               ],
             ),
-          ],
+            bottomNavigationBar: hasCurrentTrack
+                ? SafeArea(top: false, child: GestureDetector(onTap: _openNowPlaying, child: const MiniPlayer()))
+                : null,
+          ),
+        ),
+      );
+    }
+
+    return CallbackShortcuts(
+      bindings: shortcuts,
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          body: body,
+          bottomNavigationBar: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (hasCurrentTrack) GestureDetector(onTap: _openNowPlaying, child: const MiniPlayer()),
+                BottomNavigationBar(
+                  type: BottomNavigationBarType.fixed,
+                  currentIndex: _index,
+                  onTap: (i) => setState(() => _index = i),
+                  items: const [
+                    BottomNavigationBarItem(
+                        icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Home'),
+                    BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
+                    BottomNavigationBarItem(
+                      icon: Icon(Icons.library_music_outlined),
+                      activeIcon: Icon(Icons.library_music),
+                      label: 'Library',
+                    ),
+                    BottomNavigationBarItem(
+                        icon: Icon(Icons.groups_outlined), activeIcon: Icon(Icons.groups), label: 'Jam'),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -213,7 +285,8 @@ class _HomeTab extends StatelessWidget {
                       ElevatedButton.icon(
                         onPressed: onExploreTap,
                         icon: const Icon(Icons.search, color: Colors.black),
-                        label: const Text('Discover Music', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                        label: const Text('Discover Music',
+                            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: SonivoColors.accent,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

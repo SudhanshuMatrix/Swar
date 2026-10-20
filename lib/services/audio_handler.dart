@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -23,8 +25,10 @@ class SonivoAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     await player.setAudioSource(AudioSource.uri(Uri.parse(url)));
   }
 
+  /// just_audio's play() only completes when playback stops, so awaiting it
+  /// would block callers (and keep loading spinners up) for the whole song.
   @override
-  Future<void> play() => player.play();
+  Future<void> play() async => unawaited(player.play());
 
   @override
   Future<void> pause() => player.pause();

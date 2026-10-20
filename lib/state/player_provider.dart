@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 
+import '../core/errors.dart';
 import '../models/track.dart';
 import '../services/api_service.dart';
 import '../services/audio_handler.dart';
@@ -67,6 +68,14 @@ class PlayerProvider extends ChangeNotifier {
   double _volume = 1.0;
   String? _errorMessage;
   String? _radioStationId;
+
+  // Listening session, used to pick better next songs.
+  final List<String> _sessionPlayed = []; // newest first
+  final Set<String> _sessionSkipped = {};
+  String? _playingId;
+  DateTime _playStartedAt = DateTime.now();
+  bool _endedNaturally = false;
+  Future<void>? _topUp;
   String? _radioLabel;
 
   Track? get currentTrack => (_queueIndex >= 0 && _queueIndex < _queue.length) ? _queue[_queueIndex] : null;
@@ -191,6 +200,7 @@ class PlayerProvider extends ChangeNotifier {
   Future<void> _loadCurrent({required bool autoplay}) async {
     final track = currentTrack;
     if (track == null) return;
+    _closePlay();
     _loading = true;
     _errorMessage = null;
     _position = Duration.zero;
@@ -204,31 +214,32 @@ class PlayerProvider extends ChangeNotifier {
         await audioHandler.loadUrl(stream.url, _mediaItem(stream.track));
       }
       if (autoplay) await audioHandler.play();
+      _playingId = track.id;
+      _playStartedAt = DateTime.now();
+      _endedNaturally = false;
       _prefetchUpcoming();
+      _maybeTopUpQueue();
       await LibraryService.instance.addRecent(track);
     } catch (e) {
-      _errorMessage = 'Could not play "${track.title}": $e';
+      _errorMessage = 'Could not play "${track.title}". ${friendlyError(e)}';
+      ErrorPopup.show(e, title: 'Couldn\'t play "${track.title}"', onRetry: () => _loadCurrent(autoplay: true));
     } finally {
       _loading = false;
       notifyListeners();
     }
   }
 
-  /// Flips the button right away, then tells the audio engine. just_audio's
-  /// play() only completes when playback stops, so it is not awaited.
+  /// Flips the button right away, then tells the audio engine.
   Future<void> playPause() async {
     final wasPlaying = _playing;
     _playing = !wasPlaying;
     notifyListeners();
     try {
-      if (wasPlaying) {
-        await audioHandler.pause();
-      } else {
-        unawaited(audioHandler.play());
-      }
-    } catch (_) {
+      wasPlaying ? await audioHandler.pause() : await audioHandler.play();
+    } catch (e) {
       _playing = wasPlaying;
       notifyListeners();
+      ErrorPopup.show(e, title: 'Playback problem');
     }
   }
 
@@ -272,7 +283,8 @@ class PlayerProvider extends ChangeNotifier {
       _radioStationId = station.id;
       _radioLabel = station.label;
     } catch (e) {
-      _errorMessage = 'Could not start radio: $e';
+      _errorMessage = 'Could not start radio. ${friendlyError(e)}';
+      ErrorPopup.show(e, title: "Couldn't start radio", onRetry: () => startRadio(track, kind: kind));
     } finally {
       _loading = false;
       notifyListeners();
@@ -311,19 +323,15 @@ class PlayerProvider extends ChangeNotifier {
         if (_repeat == PlaybackRepeatMode.all) {
           _queueIndex = 0;
         } else if (_autoPlayRelated && currentTrack != null) {
-          try {
-            final related = _radioStationId != null
-                ? await api.radioNext(_radioStationId!)
-                : await api.getRelated(currentTrack!.id);
-            final existingIds = _queue.map((t) => t.id).toSet();
-            final newTracks = related.where((t) => !existingIds.contains(t.id)).toList();
-            if (newTracks.isNotEmpty) {
-              _queue.addAll(newTracks);
-              _queueIndex++;
-              await _loadCurrent(autoplay: true);
-              return;
-            }
-          } catch (_) {}
+          // Usually the queue was already topped up in the background; if
+          // not, fetch now.
+          final before = _queue.length;
+          await (_topUp ?? _fetchMore());
+          if (_queue.length == before) await _fetchMore();
+          if (_queue.length > before) {
+            _queueIndex++;
+            await _loadCurrent(autoplay: true);
+          }
           return;
         } else {
           return;
@@ -345,7 +353,58 @@ class PlayerProvider extends ChangeNotifier {
     await _loadCurrent(autoplay: true);
   }
 
+  /// Ends the current play: remembers it for this session and reports it
+  /// (as a skip if less than half was heard and it didn't finish).
+  void _closePlay() {
+    final id = _playingId;
+    if (id == null) return;
+    _playingId = null;
+    final heard = _position;
+    final skipped = !_endedNaturally && _duration > Duration.zero && heard < _duration * 0.5;
+    _sessionPlayed
+      ..remove(id)
+      ..insert(0, id);
+    if (_sessionPlayed.length > 30) _sessionPlayed.removeLast();
+    if (skipped) _sessionSkipped.add(id);
+    api.recordPlay(id, startedAt: _playStartedAt, played: heard, skipped: skipped).catchError((_) {});
+  }
+
+  /// Keeps a couple of songs ready so the next one starts without a wait.
+  void _maybeTopUpQueue() {
+    if (!_autoPlayRelated || _repeat == PlaybackRepeatMode.all || _topUp != null) return;
+    if (jam?.inJam ?? false) return;
+    if (_queueIndex < _queue.length - 2) return;
+    _topUp = _fetchMore().whenComplete(() => _topUp = null);
+  }
+
+  Future<void> _fetchMore() async {
+    final seed = _queue.isNotEmpty ? _queue.last : currentTrack;
+    if (seed == null) return;
+    try {
+      final existing = _queue.map((t) => t.id).toSet();
+      final List<Track> more;
+      if (_radioStationId != null) {
+        more = await api.radioNext(_radioStationId!);
+      } else {
+        more = await api.recommendNext(
+          seed.id,
+          session: _sessionPlayed.where((id) => id != seed.id).toList(),
+          skipped: _sessionSkipped.toList(),
+          exclude: [...existing, ..._sessionPlayed],
+        );
+      }
+      final fresh = more.where((t) => !existing.contains(t.id) && !_sessionPlayed.contains(t.id)).toList();
+      if (fresh.isNotEmpty) {
+        _queue.addAll(fresh.take(10));
+        notifyListeners();
+      }
+    } catch (_) {
+      // Autoplay is best effort; the current song keeps playing.
+    }
+  }
+
   Future<void> _onTrackFinished() async {
+    _endedNaturally = true;
     final j = jam;
     if (j != null && j.inJam) {
       // In a Jam the server decides what plays next.

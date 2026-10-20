@@ -273,6 +273,10 @@ type recommendationsRequest struct {
 	Exclude         []string `json:"exclude"`
 	PlaylistContext []string `json:"playlistContext"`
 	Limit           int      `json:"limit"`
+	// Session lists tracks played earlier this session (newest first) and
+	// Skipped the ones the listener skipped, so picks follow the session.
+	Session []string `json:"session"`
+	Skipped []string `json:"skipped"`
 }
 
 func (s *Server) handleRecommendations(w http.ResponseWriter, r *http.Request) {
@@ -282,12 +286,13 @@ func (s *Server) handleRecommendations(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, r, err)
 		return
 	}
-	if len(req.Exclude) > 500 || len(req.PlaylistContext) > 200 {
+	if len(req.Exclude) > 500 || len(req.PlaylistContext) > 200 || len(req.Session) > 50 || len(req.Skipped) > 200 {
 		s.writeErr(w, r, catalog.Invalid("too many ids"))
 		return
 	}
 	res, err := s.rec.Next(r.Context(), recommendations.Request{
 		SeedTrackID: req.SeedTrackID, Exclude: req.Exclude, PlaylistContext: req.PlaylistContext,
+		Session: req.Session, Skipped: req.Skipped,
 		Limit: req.Limit, Device: auth.Device(r.Context()),
 	})
 	if err != nil {

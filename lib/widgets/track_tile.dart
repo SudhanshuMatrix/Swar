@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/errors.dart';
 import '../core/theme.dart';
 import '../models/track.dart';
 import '../services/download_service.dart';
@@ -118,11 +119,10 @@ class DownloadButton extends StatelessWidget {
   }
 
   Future<void> _run(BuildContext context, Future<void> Function() action) async {
-    final messenger = ScaffoldMessenger.of(context);
     try {
       await action();
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Could not download "${track.title}": $e')));
+      ErrorPopup.show(e, title: 'Couldn\'t download "${track.title}"');
     }
   }
 }

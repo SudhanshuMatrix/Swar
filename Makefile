@@ -22,7 +22,7 @@ BACKEND_DIR := server
 ## One-time project setup: generates native platform folders, fetches Dart
 ## packages. Run this again any time after editing pubspec.yaml.
 setup: check-yt-dlp
-	$(FLUTTER) create --platforms=android,ios,linux,web,windows --org com.sonivo --project-name sonivo .
+	bash scripts/prepare_platforms.sh android,ios,linux,macos,web,windows
 	$(FLUTTER) pub get
 	cd $(BACKEND_DIR) && $(GO) mod download
 

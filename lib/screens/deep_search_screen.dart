@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/errors.dart';
 import '../core/theme.dart';
 import '../models/track.dart';
 import '../services/api_service.dart';
@@ -54,14 +55,10 @@ class _DeepSearchScreenState extends State<DeepSearchScreen> {
         _notice = res.notice;
         _searched = true;
       });
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.code == 'rate_limited'
-          ? 'Deep Search is busy. Wait a moment and try again.'
-          : e.message);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'Deep Search failed. Is the Swar server running? ($e)');
+      setState(() => _error = friendlyError(e));
+      ErrorPopup.show(e, title: 'Deep Search failed', onRetry: _run);
     } finally {
       if (mounted) setState(() => _loading = false);
     }

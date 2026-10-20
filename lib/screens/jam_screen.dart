@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../core/errors.dart';
+import '../core/jam_validation.dart';
 import '../core/theme.dart';
-import '../services/api_service.dart';
 import '../services/jam_service.dart';
 import '../widgets/track_tile.dart';
 
@@ -33,6 +34,8 @@ class _JamLobbyState extends State<_JamLobby> {
   final _code = TextEditingController();
   bool _busy = false;
   String? _error;
+  String? _nameError;
+  String? _codeError;
 
   @override
   void dispose() {
@@ -41,17 +44,42 @@ class _JamLobbyState extends State<_JamLobby> {
     super.dispose();
   }
 
-  Future<void> _do(Future<void> Function(JamController jam, String name) action) async {
+  /// Checks the form; on a mistake marks the field and shows a popup.
+  bool _valid({required bool needCode}) {
+    final nameError = validateJamName(_name.text);
+    final codeError = needCode ? validateJamCode(_code.text) : null;
+    setState(() {
+      _nameError = nameError;
+      _codeError = codeError;
+    });
+    final problem = nameError ?? codeError;
+    if (problem != null) {
+      ErrorPopup.show(InputError(problem), title: needCode ? "Can't join yet" : "Can't start the Jam yet");
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _start() async {
+    if (!_valid(needCode: false)) return;
+    await _do((jam, name) => jam.create(name), "Couldn't start the Jam");
+  }
+
+  Future<void> _join() async {
+    if (!_valid(needCode: true)) return;
+    await _do((jam, name) => jam.join(normalizeJamCode(_code.text), name), "Couldn't join the Jam");
+  }
+
+  Future<void> _do(Future<void> Function(JamController jam, String name) action, String failTitle) async {
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      await action(context.read<JamController>(), _name.text.trim().isEmpty ? 'Listener' : _name.text.trim());
-    } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      await action(context.read<JamController>(), cleanJamName(_name.text));
     } catch (e) {
-      setState(() => _error = 'Could not reach the Swar server ($e)');
+      if (mounted) setState(() => _error = friendlyError(e));
+      ErrorPopup.show(e, title: failTitle);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -71,12 +99,16 @@ class _JamLobbyState extends State<_JamLobby> {
         const SizedBox(height: 20),
         TextField(
           controller: _name,
-          maxLength: 40,
-          decoration: const InputDecoration(labelText: 'Your name in the Jam'),
+          maxLength: 30,
+          textCapitalization: TextCapitalization.words,
+          onChanged: (_) {
+            if (_nameError != null) setState(() => _nameError = validateJamName(_name.text));
+          },
+          decoration: InputDecoration(labelText: 'Your name in the Jam', errorText: _nameError),
         ),
         const SizedBox(height: 8),
         FilledButton.icon(
-          onPressed: _busy ? null : () => _do((jam, name) => jam.create(name)),
+          onPressed: _busy ? null : _start,
           icon: const Icon(Icons.group_add),
           label: const Text('Start a Jam'),
         ),
@@ -85,10 +117,18 @@ class _JamLobbyState extends State<_JamLobby> {
           controller: _code,
           textCapitalization: TextCapitalization.characters,
           maxLength: 7,
-          decoration: const InputDecoration(labelText: 'Jam code', hintText: 'e.g. K7MQ2P'),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9 -]')),
+            TextInputFormatter.withFunction((_, v) => v.copyWith(text: v.text.toUpperCase())),
+          ],
+          onChanged: (_) {
+            if (_codeError != null) setState(() => _codeError = validateJamCode(_code.text));
+          },
+          onSubmitted: (_) => _busy ? null : _join(),
+          decoration: InputDecoration(labelText: 'Jam code', hintText: 'e.g. K7MQ2P', errorText: _codeError),
         ),
         OutlinedButton.icon(
-          onPressed: _busy ? null : () => _do((jam, name) => jam.join(_code.text, name)),
+          onPressed: _busy ? null : _join,
           icon: const Icon(Icons.login),
           label: const Text('Join'),
         ),
@@ -109,8 +149,8 @@ class _JamRoom extends StatelessWidget {
   Future<void> _guard(BuildContext context, Future<void> Function() f) async {
     try {
       await f();
-    } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      ErrorPopup.show(e, title: 'Jam action failed');
     }
   }
 

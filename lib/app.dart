@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'core/errors.dart';
 import 'core/theme.dart';
 import 'screens/home_shell.dart';
 
@@ -10,6 +11,7 @@ class SonivoApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Swar',
+      navigatorKey: ErrorPopup.navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: SonivoTheme.dark,
       darkTheme: SonivoTheme.dark,

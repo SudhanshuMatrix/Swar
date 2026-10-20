@@ -1,0 +1,33 @@
+# Built on Ubuntu 22.04 so it runs on 22.04 and newer Ubuntu and Lubuntu.
+name: Linux
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+env:
+  API_BASE_URL: ${{ vars.API_BASE_URL }}
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libmpv-dev
+      - uses: ./.github/actions/setup
+        with:
+          platforms: linux
+      - run: flutter build linux --release
+      - name: Package .deb and .tar.gz
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
+          mkdir -p dist
+          bash packaging/build_deb.sh "$VERSION"
+          tar -C build/linux/x64/release -czf "dist/swar-linux-x64-$VERSION.tar.gz" --transform 's/^bundle/swar/' bundle
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swar-linux
+          path: dist/*

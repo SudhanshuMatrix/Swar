@@ -4,6 +4,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 
 import '../core/constants.dart';
+import '../models/online_artist.dart';
 import '../models/online_playlist.dart';
 import '../models/track.dart';
 
@@ -180,6 +181,45 @@ class ApiService {
     return results.map(Track.fromJson).toList();
   }
 
+  /// Ranked next songs for [seedId]. [session] is what played before it this
+  /// session (newest first) and [skipped] what the listener skipped, so the
+  /// server can follow the session's mood. Falls back to the simpler
+  /// related list if the server is older.
+  Future<List<Track>> recommendNext(String seedId,
+      {List<String> session = const [], List<String> skipped = const [], List<String> exclude = const [], int limit = 10}) async {
+    try {
+      final data = await _authed('POST', '/v1/recommendations/next', body: {
+        'seedTrackId': seedId,
+        'session': session.take(50).toList(),
+        'skipped': skipped.take(200).toList(),
+        'exclude': exclude.take(500).toList(),
+        'limit': limit,
+      }) as Map<String, dynamic>;
+      return ((data['results'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map((r) => Track.fromJson(r['track'] as Map<String, dynamic>))
+          .toList();
+    } on ApiException catch (e) {
+      if (e.code == 'invalid_request' || e.status == 404) return getRelated(seedId);
+      rethrow;
+    }
+  }
+
+  /// Tells the server a song was played or skipped; it uses this to rank
+  /// future recommendations. Best effort.
+  Future<void> recordPlay(String trackId, {required DateTime startedAt, required Duration played, required bool skipped}) async {
+    await _authed('POST', '/v1/library/history', body: {
+      'events': [
+        {
+          'trackId': trackId,
+          'playedAt': startedAt.millisecondsSinceEpoch,
+          'msPlayed': played.inMilliseconds,
+          'skipped': skipped,
+        }
+      ],
+    });
+  }
+
   // ---- Playlists from the catalog ----
 
   Future<List<OnlinePlaylist>> searchPlaylists(String query, {int limit = 10}) async {
@@ -190,6 +230,22 @@ class ApiService {
         .whereType<Map<String, dynamic>>()
         .map(OnlinePlaylist.fromJson)
         .toList();
+  }
+
+  Future<List<OnlineArtist>> searchArtists(String query, {int limit = 10}) async {
+    final q = Uri(queryParameters: {'q': query, 'type': 'artists', 'limit': '$limit'}).query;
+    final data = await _public('GET', '/v1/search?$q') as Map<String, dynamic>;
+    final page = data['artists'] as Map<String, dynamic>?;
+    return ((page?['results'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(OnlineArtist.fromJson)
+        .toList();
+  }
+
+  /// The artist's profile with their top songs.
+  Future<OnlineArtist> artist(String id) async {
+    final data = await _public('GET', '/v1/artists/${Uri.encodeComponent(id)}');
+    return OnlineArtist.fromJson(data as Map<String, dynamic>);
   }
 
   Future<OnlinePlaylist> playlist(String id, {int limit = 100}) async {

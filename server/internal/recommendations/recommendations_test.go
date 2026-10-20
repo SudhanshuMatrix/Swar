@@ -127,3 +127,88 @@ func TestServiceNextFromCatalog(t *testing.T) {
 		t.Fatalf("want degraded result, got %+v %v", res, err)
 	}
 }
+
+func titled(id, artistID, title string) catalog.Track {
+	t := tr(id, artistID, "")
+	t.Title = title
+	return t
+}
+
+func TestTitleKeyGroupsVersions(t *testing.T) {
+	same := []string{"Kesariya", "Kesariya (From \"Brahmastra\")", "Kesariya - Lofi Mix", "KESARIYA [Slowed + Reverb]", "Kesariya Remix"}
+	for _, s := range same {
+		if got := titleKey(s); got != "kesariya" {
+			t.Errorf("titleKey(%q) = %q", s, got)
+		}
+	}
+	if titleKey("Tum Hi Ho") == titleKey("Tum Se Hi") {
+		t.Error("different songs must not match")
+	}
+}
+
+func TestOtherVersionsOfHeardSongsAreDropped(t *testing.T) {
+	seed := titled("seed", "A", "Kesariya")
+	cands := []Candidate{
+		{Track: titled("lofi", "B", "Kesariya - Lofi"), Sources: []string{ReasonProviderRelated}},
+		{Track: titled("x", "B", "Apna Bana Le"), Sources: []string{ReasonProviderRelated}},
+		{Track: titled("x2", "C", "Apna Bana Le (Remix)"), Sources: []string{"misc"}},
+	}
+	out := Rank(&seed, cands, Signals{}, nil, time.Now())
+	if got := ids(out); len(got) != 1 || got[0] != "x" {
+		t.Fatalf("want only the best version of new songs, got %v", got)
+	}
+}
+
+func TestSessionFollowsMoodAndSkips(t *testing.T) {
+	seed := tr("seed", "A", "")
+	sess := Session{
+		Recent:  []catalog.Track{tr("p1", "MOOD", ""), tr("p2", "SKIPPED", "")},
+		Skipped: map[string]bool{"p2": true},
+	}
+	cands := []Candidate{
+		{Track: tr("fromSkipped", "SKIPPED", ""), Sources: []string{ReasonProviderRelated}, Rank: 0},
+		{Track: tr("neutral", "N", ""), Sources: []string{ReasonProviderRelated}, Rank: 1},
+		{Track: tr("fromMood", "MOOD", ""), Sources: []string{ReasonProviderRelated}, Rank: 2},
+	}
+	out := RankSession(&seed, sess, cands, Signals{}, nil, time.Now())
+	if got := ids(out); got[0] != "fromMood" || got[len(got)-1] != "fromSkipped" {
+		t.Fatalf("session artist should lead and skipped artist trail: %v", got)
+	}
+}
+
+func TestEraAndShortTracks(t *testing.T) {
+	seed := tr("seed", "A", "")
+	seed.Year = 2020
+	near, far, short := tr("near", "B", ""), tr("far", "C", ""), tr("short", "D", "")
+	near.Year, far.Year, short.Year = 2021, 1995, 2020
+	short.DurationSec = 30
+	cands := []Candidate{{Track: far, Sources: []string{"misc"}}, {Track: short, Sources: []string{"misc"}}, {Track: near, Sources: []string{"misc"}}}
+	out := Rank(&seed, cands, Signals{}, nil, time.Now())
+	if got := ids(out); got[0] != "near" || got[len(got)-1] != "short" {
+		t.Fatalf("order: %v", got)
+	}
+}
+
+func TestDiversifyMixesArtists(t *testing.T) {
+	in := []Ranked{
+		{Track: tr("a1", "A", ""), Score: 5}, {Track: tr("a2", "A", ""), Score: 4.9},
+		{Track: tr("b1", "B", ""), Score: 4.5}, {Track: tr("a3", "A", ""), Score: 4.4},
+	}
+	if got := ids(Diversify(in, 1.5)); got[0] != "a1" || got[1] != "b1" {
+		t.Fatalf("want a different artist second: %v", got)
+	}
+}
+
+func TestServiceUsesSession(t *testing.T) {
+	cat, _ := testkit.Catalog(t, testkit.Options{})
+	svc := NewService(cat, nil)
+	res, err := svc.Next(context.Background(), Request{SeedTrackID: "saavn:r1", Session: []string{"saavn:r2"}, Skipped: []string{"saavn:r2"}, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids(res.Results) {
+		if id == "saavn:r2" {
+			t.Fatalf("session tracks must not be suggested again: %v", ids(res.Results))
+		}
+	}
+}

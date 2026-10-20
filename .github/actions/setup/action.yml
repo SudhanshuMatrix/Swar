@@ -1,0 +1,21 @@
+name: Set up Swar
+description: Installs Flutter, writes .env if missing and prepares the platform folders.
+inputs:
+  platforms:
+    description: Comma-separated Flutter platforms to prepare, e.g. android or macos
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: subosito/flutter-action@v2
+      with:
+        channel: stable
+        cache: true
+    - name: Ensure .env
+      shell: bash
+      run: '[ -f .env ] || echo "API_BASE_URL=${API_BASE_URL:-https://swar-urov.onrender.com}" > .env'
+    - name: Prepare platform folders
+      shell: bash
+      run: bash scripts/prepare_platforms.sh "${{ inputs.platforms }}"
+    - run: flutter pub get
+      shell: bash

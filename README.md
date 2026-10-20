@@ -180,6 +180,23 @@ Sonivo/
 
 ---
 
+## 📦 Builds (GitHub Actions)
+
+`.github/workflows/build.yml` runs on every push to `master` and starts one small workflow per platform. Each can also be run on its own from the **Actions** tab. Download the files from the run page.
+
+| Workflow | Files |
+| --- | --- |
+| `android.yml` | `Swar-Android.apk` |
+| `macos.yml` | `Swar-macOS.dmg` (unsigned) |
+| `linux.yml` | `swar_<version>_amd64.deb` and `swar-linux-x64-<version>.tar.gz` for Ubuntu / Lubuntu 22.04 and newer |
+| `windows.yml` | `Swar-Setup-<version>.exe` installer and a portable `.zip` |
+
+Shared setup (Flutter, `.env`, platform folders) lives in `.github/actions/setup`. Pushing a tag such as `v0.2.0` also publishes every file as a GitHub Release.
+
+- **macOS:** the app is unsigned. The first time, right-click it and choose **Open** (or System Settings → Privacy & Security → **Open Anyway**).
+- **Windows:** on the "Windows protected your PC" screen, click **More info** → **Run anyway**.
+- **Linux:** `sudo apt install ./swar_<version>_amd64.deb` also installs libmpv, which plays the audio.
+
 ## ⚖️ Legal & Disclaimer
 
 For personal, educational, and non-commercial research use only. Streaming media from third-party platforms may be subject to their respective Terms of Service. You are solely responsible for how you use this software.

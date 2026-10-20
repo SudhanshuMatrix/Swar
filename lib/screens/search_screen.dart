@@ -2,7 +2,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/errors.dart';
 import '../core/theme.dart';
+import '../models/online_artist.dart';
 import '../models/online_playlist.dart';
 import '../models/track.dart';
 import '../services/api_service.dart';
@@ -10,6 +12,7 @@ import '../services/jam_service.dart';
 import '../state/library_provider.dart';
 import '../state/player_provider.dart';
 import '../widgets/track_tile.dart';
+import 'artist_screen.dart';
 import 'deep_search_screen.dart';
 import 'online_playlist_screen.dart';
 
@@ -24,6 +27,9 @@ class _SearchScreenState extends State<SearchScreen> {
   final _controller = TextEditingController();
   List<Track> _results = [];
   List<OnlinePlaylist> _playlists = [];
+  List<OnlineArtist> _artists = [];
+
+  bool get _hasExtras => _playlists.isNotEmpty || _artists.isNotEmpty;
   bool _loading = false;
   bool _searched = false;
   String? _error;
@@ -55,6 +61,7 @@ class _SearchScreenState extends State<SearchScreen> {
       setState(() {
         _results = [];
         _playlists = [];
+        _artists = [];
       });
       return;
     }
@@ -64,19 +71,24 @@ class _SearchScreenState extends State<SearchScreen> {
     });
     try {
       final api = context.read<ApiService>();
-      // Playlists are a bonus: if that search fails, songs still show.
+      // Singers and playlists are a bonus: if those searches fail, songs
+      // still show.
       final playlistsFuture = api.searchPlaylists(trimmed).catchError((_) => <OnlinePlaylist>[]);
+      final artistsFuture = api.searchArtists(trimmed, limit: 8).catchError((_) => <OnlineArtist>[]);
       final results = await api.search(trimmed);
       final playlists = await playlistsFuture;
+      final artists = await artistsFuture;
       if (!mounted) return;
       setState(() {
         _results = results;
         _playlists = playlists;
+        _artists = artists;
         _searched = true;
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'Search failed. Make sure the Swar backend is running ($e)');
+      setState(() => _error = friendlyError(e));
+      ErrorPopup.show(e, title: 'Search failed', onRetry: () => _search(trimmed));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -144,7 +156,7 @@ class _SearchScreenState extends State<SearchScreen> {
               onSubmitted: _search,
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
-                hintText: 'Search songs, artists or playlists',
+                hintText: 'Search songs, singers or playlists',
                 hintStyle: const TextStyle(color: SonivoColors.textSecondary, fontSize: 14),
                 prefixIcon: const Icon(Icons.search, color: Colors.white70),
                 filled: true,
@@ -159,6 +171,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           setState(() {
                             _results = [];
                             _playlists = [];
+                            _artists = [];
                             _searched = false;
                             _error = null;
                           });
@@ -167,10 +180,11 @@ class _SearchScreenState extends State<SearchScreen> {
                     : null,
               ),
               onChanged: (text) {
-                if (text.isEmpty && (_results.isNotEmpty || _playlists.isNotEmpty)) {
+                if (text.isEmpty && (_results.isNotEmpty || _hasExtras)) {
                   setState(() {
                     _results = [];
                     _playlists = [];
+                    _artists = [];
                   });
                 }
               },
@@ -196,7 +210,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
               ),
             ),
-          if (_searched && _results.isEmpty && _playlists.isEmpty && !_loading)
+          if (_searched && _results.isEmpty && !_hasExtras && !_loading)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Text('No results for "${_controller.text.trim()}".',
@@ -204,13 +218,22 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           if (_searched && !_loading) _DeepSearchPrompt(onTap: _openDeepSearch),
           Expanded(
-            child: _results.isEmpty && _playlists.isEmpty && !_loading
+            child: _results.isEmpty && !_hasExtras && !_loading
                 ? _buildBrowseGenres()
                 : ListView.builder(
-                    itemCount: _results.length + (_playlists.isEmpty ? 0 : 1),
+                    itemCount: _results.length + (_hasExtras ? 1 : 0),
                     itemBuilder: (context, index) {
-                      if (_playlists.isNotEmpty && index == 0) return _PlaylistRow(playlists: _playlists);
-                      final i = _playlists.isEmpty ? index : index - 1;
+                      if (_hasExtras && index == 0) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (_artists.isNotEmpty) _ArtistRow(artists: _artists),
+                            if (_playlists.isNotEmpty) _PlaylistRow(playlists: _playlists),
+                            if (_results.isNotEmpty) const _SectionTitle('Songs'),
+                          ],
+                        );
+                      }
+                      final i = _hasExtras ? index - 1 : index;
                       final t = _results[i];
                       final jam = context.read<JamController>();
                       final isLiked = library.isLiked(t.id);
@@ -343,10 +366,7 @@ class _PlaylistRow extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Text('Playlists', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        ),
+        const _SectionTitle('Playlists'),
         SizedBox(
           height: 190,
           child: ListView.separated(
@@ -391,10 +411,6 @@ class _PlaylistRow extends StatelessWidget {
             },
           ),
         ),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Text('Songs', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        ),
       ],
     );
   }
@@ -405,4 +421,61 @@ class _PlaylistRow extends StatelessWidget {
         color: Colors.grey[850],
         child: const Icon(Icons.queue_music, color: Colors.white38, size: 40),
       );
+}
+
+class _SectionTitle extends StatelessWidget {
+  final String text;
+  const _SectionTitle(this.text);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Text(text, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+      );
+}
+
+/// Round singer photos above the results; tap one for their top songs.
+class _ArtistRow extends StatelessWidget {
+  final List<OnlineArtist> artists;
+  const _ArtistRow({required this.artists});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionTitle('Singers'),
+        SizedBox(
+          height: 130,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: artists.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 14),
+            itemBuilder: (context, i) {
+              final a = artists[i];
+              return GestureDetector(
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ArtistScreen(artist: a))),
+                child: SizedBox(
+                  width: 92,
+                  child: Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 44,
+                        backgroundColor: Colors.grey[850],
+                        backgroundImage: a.imageUrl.isNotEmpty ? CachedNetworkImageProvider(a.imageUrl) : null,
+                        child: a.imageUrl.isEmpty ? const Icon(Icons.person, size: 40, color: Colors.white38) : null,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
 }
