@@ -43,8 +43,9 @@ class PlayerProvider extends ChangeNotifier {
       }
       if (changed) notifyListeners();
     });
-    // Position ticks very often; redrawing every listener on each one makes
-    // taps (like play/pause) feel slow, so only notify a few times a second.
+    // Position ticks very often. Only the progress bars follow it (through
+    // [progress], a few times a second); everything else listening to the
+    // player redraws on real changes only, which keeps slow phones smooth.
     audioHandler.player.positionStream.listen((pos) {
       // A restored song shows where it was paused until it is loaded.
       if (_needsLoad) return;
@@ -55,7 +56,7 @@ class PlayerProvider extends ChangeNotifier {
       }
       if ((pos - _lastNotifiedPosition).abs() >= const Duration(milliseconds: 250)) {
         _lastNotifiedPosition = pos;
-        notifyListeners();
+        progress.value = pos;
       }
     });
     audioHandler.player.durationStream.listen((d) {
@@ -70,6 +71,9 @@ class PlayerProvider extends ChangeNotifier {
   bool _playing = false;
   bool _loading = false;
   Duration _position = Duration.zero;
+
+  /// The playback position for progress bars and times.
+  final ValueNotifier<Duration> progress = ValueNotifier(Duration.zero);
   Duration _lastNotifiedPosition = Duration.zero;
   Duration _duration = Duration.zero;
   bool _shuffle = false;
@@ -97,6 +101,20 @@ class PlayerProvider extends ChangeNotifier {
   Timer? _sleepTimer;
   DateTime? _sleepAt;
   bool _sleepAfterTrack = false;
+
+  @override
+  void notifyListeners() {
+    progress.value = _position;
+    super.notifyListeners();
+  }
+
+  /// Whether the queue is exactly [tracks], in any order (shuffle keeps a
+  /// playlist's songs but reorders them).
+  bool isQueueOf(List<Track> tracks) {
+    if (tracks.isEmpty || tracks.length != _queue.length) return false;
+    final ids = {for (final t in _queue) t.id};
+    return tracks.every((t) => ids.contains(t.id));
+  }
 
   Track? get currentTrack => (_queueIndex >= 0 && _queueIndex < _queue.length) ? _queue[_queueIndex] : null;
   List<Track> get queue => List.unmodifiable(_queue);
@@ -295,6 +313,7 @@ class PlayerProvider extends ChangeNotifier {
     _errorMessage = null;
     _position = Duration.zero;
     notifyListeners();
+    String? streamUrl;
     try {
       final local = downloads?.localFileFor(track.id);
       final start = startAt > Duration.zero ? startAt : null;
@@ -302,6 +321,7 @@ class PlayerProvider extends ChangeNotifier {
         await audioHandler.loadUrl(Uri.file(local).toString(), _mediaItem(track), startAt: start);
       } else {
         final stream = await api.resolveAudio(track.id);
+        streamUrl = stream.url;
         await audioHandler.loadUrl(stream.url, _mediaItem(stream.track), startAt: start);
       }
       if (start != null) _position = start;
@@ -316,7 +336,9 @@ class PlayerProvider extends ChangeNotifier {
       _lastSavedPosition = _position;
       _saveSession();
       onTrackStarted?.call();
-    } catch (e) {
+    } catch (err) {
+      // A Deep Search song that won't load: show the server's reason.
+      final e = (err is! ApiException && streamUrl != null ? await api.relayProblem(streamUrl) : null) ?? err;
       _errorMessage = 'Could not play "${track.title}". ${friendlyError(e)}';
       ErrorPopup.show(e, title: 'Couldn\'t play "${track.title}"', onRetry: () => _loadCurrent(autoplay: true));
     } finally {

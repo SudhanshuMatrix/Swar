@@ -8,6 +8,7 @@ import '../models/online_playlist.dart';
 import '../models/track.dart';
 import '../services/api_service.dart';
 import '../state/player_provider.dart';
+import '../widgets/play_all_button.dart';
 import '../widgets/track_actions.dart';
 import '../widgets/track_tile.dart';
 import '../widgets/ui.dart';
@@ -76,11 +77,7 @@ class _OnlinePlaylistScreenState extends State<OnlinePlaylistScreen> {
                           style: const TextStyle(color: SonivoColors.textSecondary),
                         ),
                         const SizedBox(height: 8),
-                        FilledButton.icon(
-                          onPressed: _tracks.isEmpty ? null : () => player.playQueue(_tracks, 0),
-                          icon: const Icon(PhosphorIconsFill.play),
-                          label: const Text('Play all'),
-                        ),
+                        PlayAllButton(tracks: _tracks, size: 44),
                       ],
                     ),
                   ),

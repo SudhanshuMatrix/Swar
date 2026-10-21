@@ -6,6 +6,7 @@ import '../core/theme.dart';
 import '../models/track.dart';
 import '../state/library_provider.dart';
 import '../state/player_provider.dart';
+import '../widgets/play_all_button.dart';
 import '../widgets/artist_link.dart';
 import '../widgets/jam_picker.dart';
 import '../widgets/track_tile.dart';
@@ -163,11 +164,7 @@ class PlaylistScreen extends StatelessWidget {
                                 const SizedBox(height: Gaps.md),
                                 Row(
                                   children: [
-                                    GradientPlayButton(
-                                      size: 48,
-                                      playing: false,
-                                      onPressed: () => player.playQueue(tracks, 0),
-                                    ),
+                                    PlayAllButton(tracks: tracks),
                                     const SizedBox(width: Gaps.sm),
                                     IconButton.filledTonal(
                                       tooltip: 'Shuffle',

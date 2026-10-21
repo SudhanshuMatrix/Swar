@@ -176,6 +176,15 @@ func TestRestrictedErrors(t *testing.T) {
 	}
 }
 
+func TestBotCheckIsNotBlamedOnTheSong(t *testing.T) {
+	r := &recorder{err: &exitError{err: errors.New("exit 1"), stderr: "ERROR: [youtube] x: Sign in to confirm you're not a bot"}}
+	s := New(Options{Runner: r.run})
+	_, err := s.Search(context.Background(), "https://youtu.be/dQw4w9WgXcQ", 1)
+	if catalog.KindOf(err) != catalog.KindRateLimited || !strings.Contains(err.Error(), "blocking") {
+		t.Fatalf("want a blocked-server error, got %v", err)
+	}
+}
+
 func TestMediaSourcesGatedAndDRMSkipped(t *testing.T) {
 	r := &recorder{}
 	s := New(Options{Runner: r.run})

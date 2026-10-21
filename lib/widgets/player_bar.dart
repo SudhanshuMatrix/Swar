@@ -5,6 +5,7 @@ import '../core/app_icons.dart';
 import '../core/theme.dart';
 import '../screens/now_playing_screen.dart';
 import '../state/player_provider.dart';
+import 'playback_position.dart';
 import 'artist_link.dart';
 import 'sleep_timer.dart';
 import 'track_actions.dart';
@@ -24,7 +25,6 @@ class PlayerBar extends StatelessWidget {
     if (track == null) return const SizedBox.shrink();
 
     final max = player.duration.inMilliseconds == 0 ? 1.0 : player.duration.inMilliseconds.toDouble();
-    final value = player.position.inMilliseconds.clamp(0, max.toInt()).toDouble();
 
     return Container(
       height: 88,
@@ -115,42 +115,44 @@ class PlayerBar extends StatelessWidget {
                     ),
                   ],
                 ),
-                Row(
-                  children: [
-                    SizedBox(
-                      width: 44,
-                      child: Text(formatDuration(player.position),
-                          textAlign: TextAlign.right,
-                          style: const TextStyle(
-                              fontSize: 11,
-                              color: SonivoColors.textSecondary,
-                              fontFeatures: [FontFeature.tabularFigures()])),
-                    ),
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 3,
-                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-                        ),
-                        child: SizedBox(
-                          height: 20,
-                          child: Slider(
-                            value: value,
-                            max: max,
-                            onChanged: (v) => player.seek(Duration(milliseconds: v.toInt())),
+                PlaybackPosition(
+                  builder: (context, position) => Row(
+                    children: [
+                      SizedBox(
+                        width: 44,
+                        child: Text(formatDuration(position),
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                                fontSize: 11,
+                                color: SonivoColors.textSecondary,
+                                fontFeatures: [FontFeature.tabularFigures()])),
+                      ),
+                      Expanded(
+                        child: SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 3,
+                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                          ),
+                          child: SizedBox(
+                            height: 20,
+                            child: Slider(
+                              value: position.inMilliseconds.clamp(0, max.toInt()).toDouble(),
+                              max: max,
+                              onChanged: (v) => player.seek(Duration(milliseconds: v.toInt())),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    SizedBox(
-                      width: 44,
-                      child: Text(formatDuration(player.duration),
-                          style: const TextStyle(
-                              fontSize: 11,
-                              color: SonivoColors.textSecondary,
-                              fontFeatures: [FontFeature.tabularFigures()])),
-                    ),
-                  ],
+                      SizedBox(
+                        width: 44,
+                        child: Text(formatDuration(player.duration),
+                            style: const TextStyle(
+                                fontSize: 11,
+                                color: SonivoColors.textSecondary,
+                                fontFeatures: [FontFeature.tabularFigures()])),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

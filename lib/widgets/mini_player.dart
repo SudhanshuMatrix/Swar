@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../core/app_icons.dart';
 import '../core/theme.dart';
 import '../state/player_provider.dart';
+import 'playback_position.dart';
 import 'ui.dart';
 
 /// Floating player card above the bottom navigation on phones. Tap it to
@@ -18,8 +19,7 @@ class MiniPlayer extends StatelessWidget {
     final track = player.currentTrack;
     if (track == null) return const SizedBox.shrink();
 
-    final progress =
-        player.duration.inMilliseconds == 0 ? 0.0 : player.position.inMilliseconds / player.duration.inMilliseconds;
+    final total = player.duration.inMilliseconds;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(Gaps.sm, 0, Gaps.sm, Gaps.sm),
@@ -68,11 +68,13 @@ class MiniPlayer extends StatelessWidget {
                   ],
                 ),
               ),
-              LinearProgressIndicator(
-                value: progress.clamp(0, 1).toDouble(),
-                minHeight: 2,
-                color: SonivoColors.accent,
-                backgroundColor: SonivoColors.outline,
+              PlaybackPosition(
+                builder: (context, position) => LinearProgressIndicator(
+                  value: total == 0 ? 0 : (position.inMilliseconds / total).clamp(0, 1).toDouble(),
+                  minHeight: 2,
+                  color: SonivoColors.accent,
+                  backgroundColor: SonivoColors.outline,
+                ),
               ),
             ],
           ),

@@ -23,6 +23,8 @@ String friendlyError(Object error) {
   if (error is ApiException) {
     switch (error.code) {
       case 'rate_limited':
+        if (error.message.contains('YouTube'))
+          return '${error.message}. Deep Search songs will play again once it stops.';
         return 'Too many requests right now. Wait a few seconds and try again.';
       case 'not_found':
         return 'That song or playlist could not be found. It may have been removed.';
@@ -32,6 +34,9 @@ String friendlyError(Object error) {
         return 'The music source took too long to answer. Try again in a moment.';
       case 'upstream_error':
         return 'The music source is having trouble right now. Try again in a moment.';
+      case 'upstream':
+        // The Deep Search audio relay: YouTube refused or couldn't be reached.
+        return "The server couldn't get this song from YouTube (${error.message}). Try again, or pick another result.";
       case 'unauthorized':
         return 'Your session expired. Try again and Swar will sign this device in again.';
       case 'invalid_request':

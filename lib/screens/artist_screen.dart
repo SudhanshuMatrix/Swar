@@ -8,6 +8,7 @@ import '../models/online_artist.dart';
 import '../models/track.dart';
 import '../services/api_service.dart';
 import '../state/player_provider.dart';
+import '../widgets/play_all_button.dart';
 import '../widgets/track_actions.dart';
 import '../widgets/track_tile.dart';
 import '../widgets/ui.dart';
@@ -143,8 +144,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
                           const SizedBox(height: Gaps.md),
                           Row(
                             children: [
-                              GradientPlayButton(
-                                  size: 48, playing: false, onPressed: _tracks.isEmpty ? null : () => _play(0)),
+                              PlayAllButton(tracks: _playable, onPlay: () => _play(0)),
                               const SizedBox(width: Gaps.sm),
                               IconButton.filledTonal(
                                 tooltip: 'Shuffle',

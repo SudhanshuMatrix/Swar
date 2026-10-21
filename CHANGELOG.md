@@ -12,6 +12,20 @@ release notes.
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-10-21
+
+### Changed
+
+- Smoother on low-end phones: while a song plays, only the progress bars redraw, not the whole player, and the blurred Now Playing background is drawn once instead of on every change.
+- Faster on every platform: the app keeps one connection to the server open instead of opening a new one for each request, and the server compresses its answers (song lists shrink several times over).
+- When a Deep Search song won't play, the popup now says why (for example, that YouTube is blocking the server) instead of a generic error.
+
+### Fixed
+
+- The play button on playlists and singer pages turns into a pause button while that list is playing, and pauses and resumes it instead of starting over.
+
+- Android and Windows builds failed in 1.2.1 because of the notification permission package. Swar now asks for the permission itself on Android, so every platform builds again.
+
 ## [1.2.1] - 2026-10-21
 
 ### Changed

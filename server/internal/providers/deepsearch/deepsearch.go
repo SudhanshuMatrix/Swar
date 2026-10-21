@@ -520,6 +520,12 @@ func (s *Service) classify(ctx context.Context, err error) error {
 	if errors.As(err, &ee) && strings.Contains(strings.ToLower(ee.stderr), "drm") {
 		return catalog.Unavailable("this item is DRM-protected and cannot be played")
 	}
+	if errors.As(err, &ee) && strings.Contains(ee.stderr, "not a bot") {
+		// YouTube is refusing this server's address, not this song, so
+		// trying other uploads would only fail the same way.
+		s.m.Inc(`deepsearch_errors_total{kind="blocked"}`)
+		return catalog.NewError(catalog.KindRateLimited, "YouTube is blocking requests from this server right now", err)
+	}
 	if errors.As(err, &ee) && (strings.Contains(ee.stderr, "Private video") || strings.Contains(ee.stderr, "Sign in") || strings.Contains(ee.stderr, "unavailable")) {
 		return catalog.Unavailable("this item is unavailable or restricted")
 	}

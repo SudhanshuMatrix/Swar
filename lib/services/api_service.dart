@@ -66,6 +66,10 @@ class ApiService {
   ApiService({String? baseUrl}) : baseUrl = baseUrl ?? ApiConfig.baseUrl;
 
   static const _deviceBox = 'swar_device';
+
+  /// One client for every request, so connections to the server are kept
+  /// open and reused instead of paying a new TLS handshake each time.
+  static final http.Client _http = http.Client();
   String? _token;
 
   // ---- Device identity ----
@@ -80,7 +84,7 @@ class ApiService {
     if (saved != null && savedFor == baseUrl) {
       return _token = saved;
     }
-    final res = await http.post(Uri.parse('$baseUrl/v1/auth/device'));
+    final res = await _http.post(Uri.parse('$baseUrl/v1/auth/device'));
     final data = _data(res) as Map<String, dynamic>;
     _token = data['token'] as String;
     await box.put('token', _token);
@@ -104,7 +108,7 @@ class ApiService {
         req.headers['Content-Type'] = 'application/json';
         req.body = jsonEncode(body);
       }
-      final res = await http.Response.fromStream(await req.send());
+      final res = await http.Response.fromStream(await _http.send(req));
       if (res.statusCode == 401 && attempt == 0) {
         await _forgetToken();
         continue;
@@ -119,7 +123,7 @@ class ApiService {
       req.headers['Content-Type'] = 'application/json';
       req.body = jsonEncode(body);
     }
-    return _data(await http.Response.fromStream(await req.send()));
+    return _data(await http.Response.fromStream(await _http.send(req)));
   }
 
   /// Unwraps the {success, data} envelope or throws [ApiException].
@@ -144,7 +148,7 @@ class ApiService {
       'q': query,
       'limit': '$limit',
     });
-    final res = await http.get(uri);
+    final res = await _http.get(uri);
     if (res.statusCode != 200) {
       throw _legacyError(res, 'Search failed');
     }
@@ -163,7 +167,7 @@ class ApiService {
   }
 
   Future<StreamResult> resolveAudio(String trackId) async {
-    final res = await http.get(Uri.parse('$baseUrl/track/${Uri.encodeComponent(trackId)}'));
+    final res = await _http.get(Uri.parse('$baseUrl/track/${Uri.encodeComponent(trackId)}'));
     if (res.statusCode != 200) {
       throw _legacyError(res, 'Could not resolve audio');
     }
@@ -174,8 +178,22 @@ class ApiService {
     return StreamResult(url: url, track: Track.fromJson(data));
   }
 
+  /// Why the server's audio relay won't serve [url] (a Deep Search song),
+  /// or null when it does. The player itself only reports "can't play".
+  Future<ApiException?> relayProblem(String url) async {
+    if (!url.contains('/v1/playback/')) return null;
+    try {
+      final res = await _http.get(Uri.parse(url), headers: {'Range': 'bytes=0-1'}).timeout(const Duration(seconds: 45));
+      if (res.statusCode < 400) return null;
+      _data(res);
+    } on ApiException catch (e) {
+      return e;
+    } catch (_) {}
+    return null;
+  }
+
   Future<List<Track>> getRelated(String trackId) async {
-    final res = await http.get(Uri.parse('$baseUrl/related/${Uri.encodeComponent(trackId)}'));
+    final res = await _http.get(Uri.parse('$baseUrl/related/${Uri.encodeComponent(trackId)}'));
     if (res.statusCode != 200) {
       throw _legacyError(res, 'Could not fetch related tracks');
     }

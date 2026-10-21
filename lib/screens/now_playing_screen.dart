@@ -9,6 +9,7 @@ import '../core/theme.dart';
 import '../state/player_provider.dart';
 import '../widgets/artist_link.dart';
 import '../widgets/jam_picker.dart';
+import '../widgets/playback_position.dart';
 import '../widgets/sleep_timer.dart';
 import '../widgets/track_actions.dart';
 import '../widgets/ui.dart';
@@ -194,10 +195,14 @@ class NowPlayingScreen extends StatelessWidget {
         children: [
           // Blurred cover behind everything, tinted with the page colour.
           if (track.thumbnailUrl.isNotEmpty)
-            ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
-              // Heavily blurred, so a small decode looks the same.
-              child: CachedNetworkImage(imageUrl: track.thumbnailUrl, fit: BoxFit.cover, memCacheHeight: 160),
+            // Its own layer, so the blur is drawn once rather than again
+            // every time the controls change.
+            RepaintBoundary(
+              child: ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
+                // Heavily blurred, so a small decode looks the same.
+                child: CachedNetworkImage(imageUrl: track.thumbnailUrl, fit: BoxFit.cover, memCacheHeight: 160),
+              ),
             ),
           Container(
             decoration: BoxDecoration(
@@ -251,7 +256,6 @@ class _Controls extends StatelessWidget {
   Widget build(BuildContext context) {
     final track = player.currentTrack!;
     final max = player.duration.inMilliseconds == 0 ? 1.0 : player.duration.inMilliseconds.toDouble();
-    final value = player.position.inMilliseconds.clamp(0, max.toInt()).toDouble();
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -287,18 +291,31 @@ class _Controls extends StatelessWidget {
           ],
         ),
         const SizedBox(height: Gaps.md),
-        Slider(value: value, max: max, onChanged: (v) => player.seek(Duration(milliseconds: v.toInt()))),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: Gaps.lg),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        PlaybackPosition(
+          builder: (context, position) => Column(
             children: [
-              Text(formatDuration(player.position),
-                  style: const TextStyle(
-                      color: SonivoColors.textSecondary, fontSize: 12, fontFeatures: [FontFeature.tabularFigures()])),
-              Text(formatDuration(player.duration),
-                  style: const TextStyle(
-                      color: SonivoColors.textSecondary, fontSize: 12, fontFeatures: [FontFeature.tabularFigures()])),
+              Slider(
+                  value: position.inMilliseconds.clamp(0, max.toInt()).toDouble(),
+                  max: max,
+                  onChanged: (v) => player.seek(Duration(milliseconds: v.toInt()))),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: Gaps.lg),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(formatDuration(position),
+                        style: const TextStyle(
+                            color: SonivoColors.textSecondary,
+                            fontSize: 12,
+                            fontFeatures: [FontFeature.tabularFigures()])),
+                    Text(formatDuration(player.duration),
+                        style: const TextStyle(
+                            color: SonivoColors.textSecondary,
+                            fontSize: 12,
+                            fontFeatures: [FontFeature.tabularFigures()])),
+                  ],
+                ),
+              ),
             ],
           ),
         ),

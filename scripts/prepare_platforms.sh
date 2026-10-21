@@ -27,13 +27,11 @@ if has android; then
       sub "s|(<manifest[^>]*>)|\$1\n    <uses-permission android:name=\"android.permission.$p\"/>|" "$M"
   done
   grep -q 'audioservice.AudioService"' "$M" || sub 's|(\s*)</application>|$1    <service android:name="com.ryanheise.audioservice.AudioService"\n            android:foregroundServiceType="mediaPlayback"\n            android:exported="true">\n            <intent-filter>\n                <action android:name="android.media.browse.MediaBrowserService" />\n            </intent-filter>\n        </service>\n        <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"\n            android:exported="true">\n            <intent-filter>\n                <action android:name="android.intent.action.MEDIA_BUTTON" />\n            </intent-filter>\n        </receiver>\n$1</application>|' "$M"
-  # The notification needs the activity that shares Flutter with audio_service.
-  for a in $(find android/app/src/main -name 'MainActivity.kt'); do
-    sub 's/import io\.flutter\.embedding\.android\.FlutterActivity/import com.ryanheise.audioservice.AudioServiceActivity/; s/: FlutterActivity\(\)/: AudioServiceActivity()/' "$a"
-  done
-  for a in $(find android/app/src/main -name 'MainActivity.java'); do
-    sub 's/import io\.flutter\.embedding\.android\.FlutterActivity;/import com.ryanheise.audioservice.AudioServiceActivity;/; s/extends FlutterActivity/extends AudioServiceActivity/' "$a"
-  done
+  # Our MainActivity: shares Flutter with audio_service (the notification
+  # needs it) and asks for notification permission on Android 13 and later.
+  rm -f android/app/src/main/java/com/sonivo/sonivo/MainActivity.java
+  mkdir -p android/app/src/main/kotlin/com/sonivo/sonivo
+  cp packaging/android/MainActivity.kt android/app/src/main/kotlin/com/sonivo/sonivo/MainActivity.kt
   # App icon and the notification's icons.
   cp -R "$ICONS"/android/res/. android/app/src/main/res/
 fi

@@ -28,4 +28,15 @@ void main() {
   test('unknown errors never show raw exception text', () {
     expect(friendlyError(StateError('Bad state: internal detail')), isNot(contains('internal detail')));
   });
+
+  test('Deep Search relay failures say YouTube refused the song', () {
+    final m = friendlyError(ApiException(502, 'upstream', 'the audio source refused the request'));
+    expect(m, contains('YouTube'));
+    expect(m, contains('refused the request'));
+  });
+
+  test('a YouTube block on the server is named, not blamed on the song', () {
+    expect(friendlyError(ApiException(503, 'rate_limited', 'YouTube is blocking requests from this server right now')),
+        startsWith('YouTube is blocking'));
+  });
 }

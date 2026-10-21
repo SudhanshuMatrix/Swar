@@ -78,7 +78,7 @@ func New(d Deps) *Server {
 	s.ready = func(ctx context.Context) error { return s.store.Ping(ctx) }
 	mux := http.NewServeMux()
 	s.routes(mux)
-	s.handler = s.base(s.cors(s.rateLimit(s.limits(s.authenticate(mux)))))
+	s.handler = s.base(s.compress(s.cors(s.rateLimit(s.limits(s.authenticate(mux))))))
 	return s
 }
 
