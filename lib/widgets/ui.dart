@@ -32,6 +32,9 @@ class Artwork extends StatelessWidget {
             width: size,
             height: size,
             fit: BoxFit.cover,
+            // Decode at the size it's drawn, not the full download, so long
+            // lists of covers use far less memory.
+            memCacheHeight: (size * MediaQuery.devicePixelRatioOf(context)).round(),
             fadeInDuration: const Duration(milliseconds: 180),
             placeholder: (_, __) => placeholder,
             errorWidget: (_, __, ___) => placeholder,

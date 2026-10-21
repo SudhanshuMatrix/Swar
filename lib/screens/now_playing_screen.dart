@@ -196,7 +196,8 @@ class NowPlayingScreen extends StatelessWidget {
           if (track.thumbnailUrl.isNotEmpty)
             ImageFiltered(
               imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
-              child: CachedNetworkImage(imageUrl: track.thumbnailUrl, fit: BoxFit.cover),
+              // Heavily blurred, so a small decode looks the same.
+              child: CachedNetworkImage(imageUrl: track.thumbnailUrl, fit: BoxFit.cover, memCacheHeight: 160),
             ),
           Container(
             decoration: BoxDecoration(

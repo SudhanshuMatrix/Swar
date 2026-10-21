@@ -17,14 +17,19 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           platforms: macos
-      - run: flutter build macos --release
-      - name: Make the disk image
+      - run: flutter build macos --release --split-debug-info=build/symbols
+      - name: Make the disk image and zip
         run: |
           mkdir -p dmg dist
           cp -R build/macos/Build/Products/Release/Swar.app dmg/
           ln -s /Applications dmg/Applications
-          hdiutil create -volname Swar -srcfolder dmg -ov -format UDZO dist/Swar-macOS.dmg
-      - uses: actions/upload-artifact@v4
+          hdiutil create -volname Swar -srcfolder dmg -ov -format ULMO dist/Swar-macOS.dmg
+          ditto -c -k --keepParent build/macos/Build/Products/Release/Swar.app dist/Swar-macOS.zip
+      - uses: actions/upload-artifact@v7
         with:
-          name: swar-macos
-          path: dist/*
+          path: dist/Swar-macOS.dmg
+          archive: false
+      - uses: actions/upload-artifact@v7
+        with:
+          path: dist/Swar-macOS.zip
+          archive: false

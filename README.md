@@ -73,9 +73,9 @@ Get the latest build from the
 
 | Platform | File | Notes |
 | --- | --- | --- |
-| Android | `Swar-Android.apk` | Allow installs from your browser or file manager when asked. |
+| Android | `Swar-Android.apk`, or the same in `Swar-Android.zip` | Allow installs from your browser or file manager when asked. |
 | Windows | `Swar-Setup-<version>.exe`, or the portable `.zip` | On "Windows protected your PC", click More info, then Run anyway. |
-| macOS | `Swar-macOS.dmg` | The app is not signed. The first time, right-click it and choose Open, or use System Settings, Privacy & Security, Open Anyway. |
+| macOS | `Swar-macOS.dmg`, or the app in `Swar-macOS.zip` | The app is not signed. The first time, right-click it and choose Open, or use System Settings, Privacy & Security, Open Anyway. |
 | Linux | `swar_<version>_amd64.deb`, or `swar-linux-x64-<version>.tar.gz` | For Ubuntu, Lubuntu and other Debian based systems, 22.04 and newer. `sudo apt install ./swar_<version>_amd64.deb` also installs libmpv, which plays the audio. |
 
 Every push to `master` also builds all platforms. Those test builds are on

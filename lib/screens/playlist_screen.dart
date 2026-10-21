@@ -14,13 +14,18 @@ import '../widgets/ui.dart';
 class PlaylistScreen extends StatelessWidget {
   final String title;
   final List<Track>? initialTracks;
-  final String? playlistId; // null for built-in "Liked Songs"
+  final String? playlistId; // null for built-in collections
+
+  /// Picks a built-in collection's songs (Most played, Recently played) so
+  /// the list stays live; neither this nor [playlistId] means Liked Songs.
+  final List<Track> Function(LibraryProvider library)? collection;
 
   const PlaylistScreen({
     super.key,
     required this.title,
     List<Track>? tracks,
     this.playlistId,
+    this.collection,
   }) : initialTracks = tracks;
 
   String _formatTotalDuration(List<Track> tracks) {
@@ -93,10 +98,10 @@ class PlaylistScreen extends StatelessWidget {
     final library = context.watch<LibraryProvider>();
 
     final tracks = playlistId == null
-        ? library.liked
+        ? (collection?.call(library) ?? library.liked)
         : (library.playlists.where((p) => p.id == playlistId).firstOrNull?.tracks ?? initialTracks ?? const []);
 
-    final isLikedSongs = playlistId == null;
+    final isLikedSongs = playlistId == null && collection == null;
 
     return Scaffold(
       appBar: AppBar(
@@ -113,7 +118,8 @@ class PlaylistScreen extends StatelessWidget {
           ? EmptyState(
               icon: isLikedSongs ? PhosphorIconsRegular.heart : PhosphorIconsRegular.musicNote,
               title: isLikedSongs ? 'No liked songs yet' : '$title is empty',
-              message: 'Search for songs and add them here.',
+              message:
+                  collection != null ? 'Play some songs and they show up here.' : 'Search for songs and add them here.',
             )
           : PageWidth(
               child: CustomScrollView(

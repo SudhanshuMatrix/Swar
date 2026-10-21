@@ -139,7 +139,7 @@ class LibraryScreen extends StatelessWidget {
                       style: const TextStyle(color: SonivoColors.textSecondary),
                     ),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => PlaylistScreen(title: 'Most played', tracks: library.mostPlayed),
+                      builder: (_) => PlaylistScreen(title: 'Most played', collection: (l) => l.mostPlayed),
                     )),
                   ),
                   ListTile(
@@ -153,7 +153,7 @@ class LibraryScreen extends StatelessWidget {
                       style: const TextStyle(color: SonivoColors.textSecondary),
                     ),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => PlaylistScreen(title: 'Recently played', tracks: library.recent),
+                      builder: (_) => PlaylistScreen(title: 'Recently played', collection: (l) => l.recent),
                     )),
                   ),
                   ListTile(

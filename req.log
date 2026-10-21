@@ -1,0 +1,9 @@
+"GET /v1/home HTTP/1.1" 200 -
+"GET /v1/search?q=aria+sen&type=playlists&limit=10 HTTP/1.1" 200 -
+"GET /v1/search?q=aria+sen&type=artists&limit=8 HTTP/1.1" 200 -
+"GET /search?q=aria+sen&limit=25 HTTP/1.1" 200 -
+"GET /v1/search?q=aria+sen&type=playlists&limit=10 HTTP/1.1" 200 -
+"GET /v1/search?q=aria+sen&type=artists&limit=8 HTTP/1.1" 200 -
+"GET /search?q=aria+sen&limit=25 HTTP/1.1" 200 -
+"GET /track/saavn%3As0 HTTP/1.1" 200 -
+"GET /v1/search?q=aria HTTP/1.1" 200 -

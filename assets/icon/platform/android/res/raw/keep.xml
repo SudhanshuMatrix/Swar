@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Release builds strip resources that no code names directly. The media
+     notification loads these icons by name from Dart, so keep them;
+     without the small icon Android refuses to show the notification. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/swar_notif_*" />

@@ -20,14 +20,19 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           platforms: linux
-      - run: flutter build linux --release
+      - run: flutter build linux --release --split-debug-info=build/symbols
       - name: Package .deb and .tar.gz
         run: |
           VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
           mkdir -p dist
           bash packaging/build_deb.sh "$VERSION"
           tar -C build/linux/x64/release -czf "dist/swar-linux-x64-$VERSION.tar.gz" --transform 's/^bundle/swar/' bundle
-      - uses: actions/upload-artifact@v4
+          ls dist
+      - uses: actions/upload-artifact@v7
         with:
-          name: swar-linux
-          path: dist/*
+          path: dist/*.deb
+          archive: false
+      - uses: actions/upload-artifact@v7
+        with:
+          path: dist/*.tar.gz
+          archive: false

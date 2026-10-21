@@ -20,7 +20,9 @@ if has android; then
   sub 's/android:label="sonivo"/android:label="Swar"/' "$M"
   # Network (release builds get no INTERNET permission by default), then
   # background playback and the media notification (audio_service).
-  for p in INTERNET WAKE_LOCK FOREGROUND_SERVICE FOREGROUND_SERVICE_MEDIA_PLAYBACK; do
+  # keep.xml (copied with the icons below) stops release builds stripping
+  # the notification icons.
+  for p in INTERNET WAKE_LOCK FOREGROUND_SERVICE FOREGROUND_SERVICE_MEDIA_PLAYBACK POST_NOTIFICATIONS; do
     grep -q "permission.$p\"" "$M" || \
       sub "s|(<manifest[^>]*>)|\$1\n    <uses-permission android:name=\"android.permission.$p\"/>|" "$M"
   done

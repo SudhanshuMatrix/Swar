@@ -18,15 +18,19 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           platforms: windows
-      - run: flutter build windows --release
+      - run: flutter build windows --release --split-debug-info=build/symbols
       - name: Make installer and zip
         run: |
           export SWAR_VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
           mkdir -p dist
           choco install innosetup -y --no-progress >/dev/null || true
           "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" packaging/swar.iss
-          (cd build/windows/x64/runner/Release && 7z a -tzip "$GITHUB_WORKSPACE/dist/Swar-Windows-$SWAR_VERSION.zip" . >/dev/null)
-      - uses: actions/upload-artifact@v4
+          (cd build/windows/x64/runner/Release && 7z a -tzip -mx=9 "$GITHUB_WORKSPACE/dist/Swar-Windows-$SWAR_VERSION.zip" . >/dev/null)
+      - uses: actions/upload-artifact@v7
         with:
-          name: swar-windows
-          path: dist/*
+          path: dist/*.exe
+          archive: false
+      - uses: actions/upload-artifact@v7
+        with:
+          path: dist/*.zip
+          archive: false

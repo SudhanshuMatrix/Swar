@@ -20,10 +20,23 @@ jobs:
         with:
           platforms: android
       # The run number keeps the Android version code rising, so a new APK
-      # installs over the old one.
-      - run: flutter build apk --release --build-number=${{ github.run_number }}
-      - run: mkdir -p dist && cp build/app/outputs/flutter-apk/app-release.apk dist/Swar-Android.apk
-      - uses: actions/upload-artifact@v4
+      # installs over the old one. Only phone CPUs are included (emulators
+      # are x86_64) and debug symbols stay out of the app, to keep it small.
+      - run: >-
+          flutter build apk --release --build-number=${{ github.run_number }}
+          --target-platform android-arm,android-arm64 --split-debug-info=build/symbols
+      - name: APK and zip
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk dist/Swar-Android.apk
+          (cd dist && zip -q Swar-Android.zip Swar-Android.apk)
+      # Each file is uploaded on its own and unzipped, so the run page and
+      # the release offer the .apk itself as well as the zip.
+      - uses: actions/upload-artifact@v7
         with:
-          name: swar-android
-          path: dist/*
+          path: dist/Swar-Android.apk
+          archive: false
+      - uses: actions/upload-artifact@v7
+        with:
+          path: dist/Swar-Android.zip
+          archive: false

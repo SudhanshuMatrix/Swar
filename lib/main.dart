@@ -2,8 +2,9 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'dart:ui';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
@@ -39,8 +40,10 @@ Future<void> main() async {
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'com.sonivo.audio',
         androidNotificationChannelName: 'Swar playback',
-        androidNotificationOngoing: true,
-        androidStopForegroundOnPause: true,
+        // Staying in the foreground while paused keeps the notification up
+        // and stops phones that kill background apps (MIUI, HyperOS) from
+        // removing it; the notification's close button ends it.
+        androidStopForegroundOnPause: false,
         androidNotificationIcon: 'drawable/swar_notif_icon',
       ),
     );
@@ -89,4 +92,9 @@ Future<void> main() async {
       child: const SonivoApp(),
     ),
   );
+
+  // Android 13 and later only show notifications once the user allows them.
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    Permission.notification.request().ignore();
+  }
 }

@@ -69,7 +69,8 @@ jobs:
     uses: ./.github/workflows/windows.yml
 
   release:
-    if: needs.version.outputs.release == 'true'
+    # Publishes whatever built, even if one platform failed.
+    if: ${{ !cancelled() && needs.version.outputs.release == 'true' }}
     needs: [version, android, macos, linux, windows]
     runs-on: ubuntu-latest
     permissions:
@@ -78,9 +79,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Release notes from CHANGELOG.md
         run: bash scripts/changelog_notes.sh "${{ needs.version.outputs.version }}" > release-notes.md
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
+          merge-multiple: true
+      - run: ls -lR artifacts
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version.outputs.version }}
@@ -88,4 +91,6 @@ jobs:
           target_commitish: ${{ github.sha }}
           body_path: release-notes.md
           make_latest: true
-          files: artifacts/*/*
+          # Installers (.apk, .exe, .dmg, .deb) and their zips side by side.
+          files: artifacts/**/*
+          fail_on_unmatched_files: false

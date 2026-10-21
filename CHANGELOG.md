@@ -12,6 +12,21 @@ release notes.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-21
+
+### Changed
+
+- Smaller downloads: the Android app only carries phone code, debug symbols are left out of every build, the Inter font keeps only Latin, Greek and Cyrillic, and the macOS disk image and Windows installer use stronger compression.
+- Lighter on memory: cover art is decoded at the size it's shown instead of full size.
+- Releases attach the .apk, .exe, .dmg and .deb files directly, next to their zips, and a platform that fails to build no longer holds back the others.
+
+### Fixed
+
+- Android: the playing-song notification now shows when the app is minimized. Release builds were stripping its icons, so Android refused to show it.
+- Android: the notification stays while paused, so phones that close background apps (MIUI, HyperOS) no longer remove it.
+- Android 13 and later: Swar asks for notification permission.
+- Library: Most played and Recently played showed your liked songs instead of their own.
+
 ## [1.2.0] - 2026-10-20
 
 ### Added
