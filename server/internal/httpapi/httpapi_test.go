@@ -23,7 +23,6 @@ import (
 	"swar/internal/observability"
 	"swar/internal/playback"
 	"swar/internal/providers/deepsearch"
-	"swar/internal/providers/saavn/saavntest"
 	"swar/internal/radio"
 	"swar/internal/recommendations"
 	"swar/internal/search"
@@ -32,7 +31,7 @@ import (
 
 type env struct {
 	srv  *httptest.Server
-	fake *saavntest.Fake
+	fake *testkit.Fake
 	deep *[]string
 }
 
@@ -181,10 +180,6 @@ func TestV1SearchAndCompat(t *testing.T) {
 	}
 	if code, body := e.do(t, "GET", "/v1/search?q=x&type=bogus", "", nil); code != 400 || errCode(body) != "invalid_request" {
 		t.Fatalf("bad type: %d %v", code, body)
-	}
-	code, body = e.do(t, "GET", "/api/search/songs?query=kesariya", "", nil)
-	if code != 200 || body["success"] != true {
-		t.Fatalf("compat: %d %v", code, body)
 	}
 	if code, body := e.do(t, "GET", "/v1/tracks/saavn:missing", "", nil); code != 404 {
 		t.Fatalf("missing track: %d %v", code, body)

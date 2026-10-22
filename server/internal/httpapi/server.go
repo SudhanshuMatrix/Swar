@@ -187,9 +187,6 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /video/{id}", s.handleLegacyVideo)
 	mux.HandleFunc("GET /related/{id}", s.handleLegacyRelated)
 
-	// Compatibility with the reference Saavn-Api routes.
-	s.saavnCompatRoutes(mux)
-
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, "not_found", "Not found")
 	})

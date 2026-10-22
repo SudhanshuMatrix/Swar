@@ -35,17 +35,16 @@ type Config struct {
 	RateLimitBurst  int
 	CacheMaxEntries int
 
-	SaavnBaseURL        string
-	SaavnTimeout        time.Duration
-	SaavnMaxConcurrency int
-	SaavnMaxRetries     int
-	SaavnMaxBodyBytes   int64
-	// SaavnMediaURLs turns on resolving Saavn's encrypted media references
-	// into stream URLs. Off by default: see docs/DECISIONS.md.
-	SaavnMediaURLs bool
-	// SaavnDownloads asserts that the operator holds rights that permit
-	// client-side offline copies of Saavn audio. Off by default.
-	SaavnDownloads bool
+	MusicProviderDeezerEnabled      bool
+	MusicProviderITunesEnabled      bool
+	MusicProviderMusicBrainzEnabled bool
+	MusicProviderSpotifyEnabled     bool
+
+	SpotifyClientID     string
+	SpotifyClientSecret string
+
+	MusicSearchTimeout  time.Duration
+	MusicMaxConcurrency int
 
 	YTDLPPath             string
 	DeepSearchEnabled     bool
@@ -83,8 +82,16 @@ func Load() (*Config, error) {
 func LoadFrom(getenv func(string) string) (*Config, error) {
 	e := envReader{get: getenv}
 	c := &Config{
-		Env:      e.str("SWAR_ENV", "development"),
-		Addr:     e.str("SWAR_ADDR", ":8765"),
+		Env: e.str("SWAR_ENV", "development"),
+		Addr: func() string {
+			if a := e.str("SWAR_ADDR", ""); a != "" {
+				return a
+			}
+			if p := e.str("PORT", ""); p != "" {
+				return ":" + p
+			}
+			return ":8765"
+		}(),
 		LogLevel: e.str("SWAR_LOG_LEVEL", "info"),
 
 		CORSOrigins: e.list("SWAR_CORS_ORIGINS", []string{"*"}),
@@ -99,13 +106,16 @@ func LoadFrom(getenv func(string) string) (*Config, error) {
 		RateLimitBurst:  e.int("SWAR_RATE_LIMIT_BURST", 40),
 		CacheMaxEntries: e.int("SWAR_CACHE_MAX_ENTRIES", 20000),
 
-		SaavnBaseURL:        e.str("SAAVN_BASE_URL", "https://www.jiosaavn.com/api.php"),
-		SaavnTimeout:        e.dur("SAAVN_TIMEOUT", 8*time.Second),
-		SaavnMaxConcurrency: e.int("SAAVN_MAX_CONCURRENCY", 8),
-		SaavnMaxRetries:     e.int("SAAVN_MAX_RETRIES", 2),
-		SaavnMaxBodyBytes:   e.int64("SAAVN_MAX_BODY_BYTES", 4<<20),
-		SaavnMediaURLs:      e.bool("SAAVN_MEDIA_URLS_ENABLED", false),
-		SaavnDownloads:      e.bool("SAAVN_DOWNLOADS_ENABLED", false),
+		MusicProviderDeezerEnabled:      e.bool("MUSIC_PROVIDER_DEEZER_ENABLED", true),
+		MusicProviderITunesEnabled:      e.bool("MUSIC_PROVIDER_ITUNES_ENABLED", true),
+		MusicProviderMusicBrainzEnabled: e.bool("MUSIC_PROVIDER_MUSICBRAINZ_ENABLED", true),
+		MusicProviderSpotifyEnabled:     e.bool("MUSIC_PROVIDER_SPOTIFY_ENABLED", false),
+
+		SpotifyClientID:     e.str("SPOTIFY_CLIENT_ID", ""),
+		SpotifyClientSecret: getenv("SPOTIFY_CLIENT_SECRET"),
+
+		MusicSearchTimeout:  e.dur("MUSIC_SEARCH_TIMEOUT", 8*time.Second),
+		MusicMaxConcurrency: e.int("MUSIC_MAX_CONCURRENCY", 10),
 
 		YTDLPPath:             e.str("YTDLP_PATH", "yt-dlp"),
 		DeepSearchEnabled:     e.bool("DEEPSEARCH_ENABLED", true),
@@ -167,9 +177,7 @@ func (c *Config) validate() error {
 	check(c.MaxBodyBytes > 0 && c.MaxBodyBytes <= 10<<20, "SWAR_MAX_BODY_BYTES must be between 1 and 10MiB")
 	check(c.RateLimitRPS > 0 && c.RateLimitBurst > 0, "rate limit values must be positive")
 	check(c.CacheMaxEntries >= 100, "SWAR_CACHE_MAX_ENTRIES must be at least 100")
-	check(c.SaavnMaxConcurrency >= 1 && c.SaavnMaxConcurrency <= 64, "SAAVN_MAX_CONCURRENCY must be 1-64")
-	check(c.SaavnMaxRetries >= 0 && c.SaavnMaxRetries <= 5, "SAAVN_MAX_RETRIES must be 0-5")
-	check(strings.HasPrefix(c.SaavnBaseURL, "https://") || !c.IsProduction(), "SAAVN_BASE_URL must use https in production")
+	check(c.MusicMaxConcurrency >= 1 && c.MusicMaxConcurrency <= 64, "MUSIC_MAX_CONCURRENCY must be 1-64")
 	check(c.DeepSearchMaxResults >= 1 && c.DeepSearchMaxResults <= 25, "DEEPSEARCH_MAX_RESULTS must be 1-25")
 	check(c.DeepSearchConcurrency >= 1 && c.DeepSearchConcurrency <= 8, "DEEPSEARCH_CONCURRENCY must be 1-8")
 	check(c.JamMaxParticipants >= 2 && c.JamMaxParticipants <= 100, "JAM_MAX_PARTICIPANTS must be 2-100")

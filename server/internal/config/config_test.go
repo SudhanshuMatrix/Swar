@@ -12,8 +12,17 @@ func TestDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Addr != ":8765" || c.SaavnMediaURLs || c.DeepSearchPlayback || !c.DeepSearchEnabled || len(c.TokenSecret) == 0 {
+	if c.Addr != ":8765" || !c.MusicProviderDeezerEnabled || !c.MusicProviderITunesEnabled || c.DeepSearchPlayback || !c.DeepSearchEnabled || len(c.TokenSecret) == 0 {
 		t.Fatalf("unexpected defaults: %+v", c)
+	}
+
+	// Test PORT environment fallback for Render
+	cPort, err := LoadFrom(env(map[string]string{"PORT": "10000"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cPort.Addr != ":10000" {
+		t.Fatalf("expected :10000 from PORT, got %s", cPort.Addr)
 	}
 }
 
@@ -34,7 +43,7 @@ func TestInvalidValues(t *testing.T) {
 	cases := map[string]string{
 		"SWAR_RATE_LIMIT_RPS":    "abc",
 		"DEEPSEARCH_MAX_RESULTS": "500",
-		"SAAVN_TIMEOUT":          "5",
+		"MUSIC_SEARCH_TIMEOUT":   "5",
 		"SWAR_ENV":               "staging",
 		"JAM_MAX_PARTICIPANTS":   "1",
 	}

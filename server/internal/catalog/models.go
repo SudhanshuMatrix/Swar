@@ -9,8 +9,13 @@ import (
 
 // Provider names used as the prefix of internal IDs.
 const (
-	ProviderSaavn   = "saavn"
-	ProviderYouTube = "yt"
+	ProviderSaavn       = "saavn"
+	ProviderYouTube     = "yt"
+	ProviderDeezer      = "dz"
+	ProviderITunes      = "it"
+	ProviderMusicBrainz = "mb"
+	ProviderSpotify     = "sp"
+	ProviderMusic       = "music"
 )
 
 // MakeID builds Swar's internal ID: "<provider>:<providerID>".
@@ -29,7 +34,7 @@ func ParseID(id string) (provider, providerID string, ok bool) {
 	id = strings.TrimSpace(id)
 	if p, rest, found := strings.Cut(id, ":"); found {
 		switch p {
-		case ProviderSaavn, ProviderYouTube:
+		case ProviderSaavn, ProviderYouTube, ProviderDeezer, ProviderITunes, ProviderMusicBrainz, ProviderSpotify, ProviderMusic:
 			if validProviderID(rest) {
 				return p, rest, true
 			}

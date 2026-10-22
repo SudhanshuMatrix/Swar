@@ -23,7 +23,7 @@ Clients should branch on `error.code`, never on `message`.
 
 ## IDs
 
-Every track, album, artist and playlist ID is `provider:providerId`, for example `saavn:IBEtXv2e` or `yt:dQw4w9WgXcQ`. Bare 11-character IDs are accepted as YouTube IDs and other bare IDs as Saavn IDs, so links from the old client keep working.
+Every track, album, artist and playlist ID is `provider:providerId`, for example `dz:1827471677` (Deezer), `it:1634567895` (Apple iTunes), `mb:c42d3d9e-1082...` (MusicBrainz), `sp:4cOd...` (Spotify), `yt:dQw4w9WgXcQ` (YouTube / Deep Search), or legacy `saavn:IBEtXv2e`. Bare 11-character IDs are accepted as YouTube IDs.
 
 ## Identity
 
@@ -62,14 +62,15 @@ A track looks like:
 
 ```json
 {
-  "id": "saavn:s1", "provider": "saavn", "providerId": "s1",
-  "title": "Kesariya", "artists": [{"id": "saavn:a1", "name": "Arijit Singh", "role": "singer"}],
-  "album": {"id": "saavn:al1", "name": "Brahmastra"},
-  "durationSec": 268, "images": [{"quality": "500x500", "url": "https://..."}],
-  "language": "hindi", "year": 2022, "explicit": false, "hasLyrics": true,
-  "url": "https://www.jiosaavn.com/song/...",
-  "playable": false,
-  "download": {"eligible": false, "reason": "downloads_not_enabled_for_source"}
+  "id": "dz:1827471677", "provider": "dz", "providerId": "1827471677",
+  "title": "Kesariya", "artists": [{"id": "dz:4443585", "name": "Pritam", "role": "primary"}],
+  "album": {"id": "dz:339462717", "name": "Brahmastra"},
+  "durationSec": 268, "images": [{"quality": "1000x1000", "url": "https://..."}],
+  "genre": "Bollywood", "year": 2022, "explicit": false, "hasLyrics": false,
+  "url": "https://www.deezer.com/track/1827471677",
+  "playable": true,
+  "download": {"eligible": false, "reason": "preview_only"},
+  "providerMeta": {"deezer_id": "1827471677", "isrc": "INS172200547", "preview_url": "https://..."}
 }
 ```
 

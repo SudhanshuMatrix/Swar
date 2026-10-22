@@ -30,3 +30,8 @@ backend/*.pyc
 
 # Misc
 .DS_Store
+.env
+.env.*
+!.env.example
+!server/.env.example
+!server/render.env.example

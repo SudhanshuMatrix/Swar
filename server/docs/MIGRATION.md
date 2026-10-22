@@ -7,31 +7,16 @@ The old backend (`backend/main.go`, yt-dlp only) is replaced by the Swar server 
 | Old route | Still works | Difference |
 |---|---|---|
 | `GET /health` | yes | |
-| `GET /search?q=&limit=` | yes | Results now come from the Saavn catalog. IDs look like `saavn:abc123` instead of a YouTube ID. Extra fields (`provider`, `album`, `playable`, `downloadable`, `language`) are additive |
-| `GET /track/{id}` | yes | Returns `403 {"error", "code": "unavailable"}` when the server does not stream that source, instead of a 500 |
-| `GET /video/{id}` | yes | Only YouTube (`yt:`) tracks have video; Saavn tracks return `404` |
-| `GET /related/{id}` | yes | Now ranked by the recommendation engine |
+| `GET /search?q=&limit=` | yes | Results come from the federated OMMR-inspired music metadata engine (Deezer, iTunes, MusicBrainz, Spotify). IDs are prefixed (e.g. `dz:1827471677`, `it:1634567895`). Extra fields (`provider`, `album`, `playable`, `downloadable`, `genre`) are additive |
+| `GET /track/{id}` | yes | Resolves tracks across providers, returns audio URL if available (e.g. preview stream or Deep Search relay) |
+| `GET /video/{id}` | yes | Only YouTube (`yt:`) tracks have video; other tracks return `404` |
+| `GET /related/{id}` | yes | Ranked by the recommendation engine |
 
-Saved data in Hive (liked songs, playlists, recents) keeps bare YouTube IDs. The server still accepts those, so old entries continue to resolve through Deep Search sources when `DEEPSEARCH_PLAYBACK_ENABLED=true`.
+Saved data in Hive and SQLite (liked songs, playlists, recents, downloads) with legacy `saavn:` or bare IDs continue to parse and resolve cleanly.
 
-## What the updated app adds
+## OMMR Metadata Engine Migration
 
-The app in this repository has already been updated:
-
-- `lib/models/track.dart` reads both the legacy and `/v1` shapes and keeps the new flags.
-- `lib/services/api_service.dart` registers the device once (`POST /v1/auth/device`, token kept in Hive), unwraps the `/v1` envelope into `ApiException(code, message)`, and adds Deep Search, prefetch, radio, downloads and Jam calls.
-- **Deep Search**: after any search the screen shows "Didn't find your song? Try Deep Search." which opens `DeepSearchScreen` (`POST /v1/search/deep`). Results that this server will not play are labelled as metadata only.
-- **Offline downloads** (`lib/services/download_service.dart`, `DownloadsScreen` under Library): asks the server for eligibility, downloads straight from the authorized source into the app's private storage, resumes with HTTP Range, verifies size and SHA-256, reports status to the server, and the player prefers the local file.
-- **Radio**: "Start radio" in a song's menu; the queue keeps extending from the station instead of plain related tracks.
-- **Prefetch**: after each track loads, the next one or two are resolved in advance.
-- **Swar Jam** (new Jam tab): create or join with a code, copy the code, participant list with admin badge and removal, leave/end, connection status with automatic reconnect, shared queue, and local playback that follows the Jam's track, position and play state.
-
-New packages: `path_provider`, `crypto`, `web_socket_channel`.
-
-## Running both during the switch
-
-There is nothing to migrate on the server side: the Swar server creates its own SQLite database on first start. Point the app at it with `--dart-define=API_BASE_URL=http://<host>:8765` exactly as before.
-
-## For clients of the reference Saavn-Api
-
-The reference project's `/api/...` routes are served with the same `{"success", "data"}` envelope. IDs in `/api` responses are the raw Saavn IDs, as before. New integrations should use `/v1` (docs/API.md).
+The unofficial JioSaavn scraper has been removed and replaced by a native Go metadata engine adapted from OMMR (Open Music Metadata Resolver):
+- **Providers implemented**: Deezer (`dz`), Apple iTunes (`it`), MusicBrainz (`mb`), Spotify (`sp`), plus Deep Search (`yt`).
+- **Federated Search & Matching**: Zero-key concurrent resolution, canonical deduplication, variation preservation (remix, acoustic, live, cover), and Jaro-Winkler/TokenSet relevance ranking.
+- **Obsolete `/api/...` routes**: Dropped in favor of standard `/v1/...` and Flutter compatibility routes (`/search`, `/track/{id}`).

@@ -155,6 +155,19 @@ func (s *Service) SearchPlaylists(ctx context.Context, q string, page, limit int
 	})
 }
 
+func (s *Service) isPrimary(provider string) bool {
+	if s.primary == nil {
+		return false
+	}
+	if s.primary.Name() == provider {
+		return true
+	}
+	if p, ok := s.primary.(interface{ Supports(string) bool }); ok && p.Supports(provider) {
+		return true
+	}
+	return false
+}
+
 // Track returns one track by internal ID.
 func (s *Service) Track(ctx context.Context, id string) (*Track, error) {
 	provider, pid, ok := ParseID(id)
@@ -162,9 +175,9 @@ func (s *Service) Track(ctx context.Context, id string) (*Track, error) {
 		return nil, Invalid("invalid track id")
 	}
 	key := "track:" + MakeID(provider, pid)
-	if provider == s.primary.Name() {
+	if s.isPrimary(provider) {
 		return load(ctx, s, s.ttl.Entity, key, func(ctx context.Context) (*Track, error) {
-			ts, err := s.primary.Tracks(ctx, []string{pid})
+			ts, err := s.primary.Tracks(ctx, []string{MakeID(provider, pid)})
 			if err != nil {
 				return nil, err
 			}
@@ -203,8 +216,8 @@ func (s *Service) Tracks(ctx context.Context, ids []string) ([]Track, error) {
 			found[full] = *v.(*Track)
 			continue
 		}
-		if provider == s.primary.Name() {
-			missing = append(missing, pid)
+		if s.isPrimary(provider) {
+			missing = append(missing, MakeID(provider, pid))
 		} else {
 			others = append(others, full)
 		}
@@ -264,11 +277,11 @@ func (s *Service) Related(ctx context.Context, id string, limit int) ([]Track, e
 	if !ok {
 		return nil, Invalid("invalid track id")
 	}
-	if provider != s.primary.Name() {
+	if !s.isPrimary(provider) {
 		return nil, Unavailable("related tracks are only available for catalog tracks")
 	}
-	ts, err := load(ctx, s, s.ttl.Related, cacheKey("related", pid, limit), func(ctx context.Context) ([]Track, error) {
-		return s.primary.Related(ctx, pid, limit)
+	ts, err := load(ctx, s, s.ttl.Related, cacheKey("related", MakeID(provider, pid), limit), func(ctx context.Context) ([]Track, error) {
+		return s.primary.Related(ctx, MakeID(provider, pid), limit)
 	})
 	if err == nil {
 		s.Remember(ts...)
@@ -278,10 +291,10 @@ func (s *Service) Related(ctx context.Context, id string, limit int) ([]Track, e
 
 func (s *Service) primaryID(id string) (string, error) {
 	provider, pid, ok := ParseID(id)
-	if !ok || provider != s.primary.Name() {
+	if !ok || !s.isPrimary(provider) {
 		return "", Invalid("invalid id")
 	}
-	return pid, nil
+	return MakeID(provider, pid), nil
 }
 
 func (s *Service) Album(ctx context.Context, id string) (*Album, error) {
@@ -398,8 +411,8 @@ func (s *Service) MediaSources(ctx context.Context, id string) ([]MediaSource, t
 	if !ok {
 		return nil, time.Time{}, Invalid("invalid track id")
 	}
-	if provider == s.primary.Name() {
-		return s.primary.MediaSources(ctx, pid)
+	if s.isPrimary(provider) {
+		return s.primary.MediaSources(ctx, MakeID(provider, pid))
 	}
 	if src, ok := s.sources[provider]; ok {
 		return src.MediaSources(ctx, pid)

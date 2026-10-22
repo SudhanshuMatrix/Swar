@@ -4,12 +4,9 @@ package testkit
 import (
 	"context"
 	"testing"
-	"time"
 
 	"swar/internal/cache"
 	"swar/internal/catalog"
-	"swar/internal/providers/saavn"
-	"swar/internal/providers/saavn/saavntest"
 	"swar/internal/repository"
 )
 
@@ -18,19 +15,12 @@ type Options struct {
 	Downloads bool
 }
 
-// Catalog returns a catalog service backed by a fake Saavn server.
-func Catalog(t testing.TB, o Options) (*catalog.Service, *saavntest.Fake) {
+// Catalog returns a catalog service backed by an in-memory fake catalog.
+func Catalog(t testing.TB, o Options) (*catalog.Service, *Fake) {
 	t.Helper()
-	f := saavntest.New()
+	f := NewFake(o)
 	t.Cleanup(f.Close)
-	c, err := saavn.New(saavn.Options{
-		BaseURL: f.APIURL(), Timeout: 2 * time.Second, MaxConcurrency: 8, MaxRetries: 0,
-		MaxBodyBytes: 1 << 20, MediaURLs: o.MediaURLs, Downloads: o.Downloads,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return catalog.NewService(c, cache.New(1000), catalog.DefaultTTLs), f
+	return catalog.NewService(f, cache.New(1000), catalog.DefaultTTLs), f
 }
 
 // Store returns an isolated in-memory database.
