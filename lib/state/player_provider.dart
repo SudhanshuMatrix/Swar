@@ -325,7 +325,19 @@ class PlayerProvider extends ChangeNotifier {
       } else {
         final stream = await api.resolveAudio(track.id);
         streamUrl = stream.url;
-        await audioHandler.loadUrl(stream.url, _mediaItem(stream.track), startAt: start);
+        final ytId = stream.track.youtubeId ?? track.youtubeId;
+        if (YouTubeAudio.supported && ytId != null && ytId.isNotEmpty) {
+          try {
+            final ytUrl = await YouTubeAudio.streamUrl(ytId);
+            await audioHandler.loadUrl(ytUrl, _mediaItem(stream.track), startAt: start);
+            streamUrl = ytUrl;
+          } catch (err) {
+            debugPrint('Swar: Device YouTube playback failed for $ytId, falling back to server relay: $err');
+            await audioHandler.loadUrl(stream.url, _mediaItem(stream.track), startAt: start);
+          }
+        } else {
+          await audioHandler.loadUrl(stream.url, _mediaItem(stream.track), startAt: start);
+        }
       }
       if (start != null) _position = start;
       if (autoplay) await audioHandler.play();

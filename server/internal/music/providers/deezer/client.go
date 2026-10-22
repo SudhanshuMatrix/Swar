@@ -374,7 +374,7 @@ func makeImages(small, medium, big, xl string) []catalog.Image {
 
 func (c *Client) SearchTracks(ctx context.Context, query string, limit int) ([]catalog.Track, error) {
 	if limit <= 0 {
-		limit = 25
+		limit = 50
 	}
 	var resp deezerListResponse[deezerTrack]
 	q := url.Values{"q": {query}, "limit": {strconv.Itoa(limit)}}
@@ -470,8 +470,8 @@ func (c *Client) Artist(ctx context.Context, id string) (*catalog.Artist, error)
 		return nil, err
 	}
 
-	top, _ := c.ArtistTopTracks(ctx, id, 10)
-	albs, _ := c.ArtistAlbums(ctx, id, 10)
+	top, _ := c.ArtistTopTracks(ctx, id, 50)
+	albs, _ := c.ArtistAlbums(ctx, id, 50)
 
 	idStr := strconv.FormatInt(a.ID, 10)
 	return &catalog.Artist{
@@ -490,7 +490,7 @@ func (c *Client) Artist(ctx context.Context, id string) (*catalog.Artist, error)
 func (c *Client) ArtistTopTracks(ctx context.Context, id string, limit int) ([]catalog.Track, error) {
 	id = strings.TrimPrefix(id, ProviderName+":")
 	if limit <= 0 {
-		limit = 10
+		limit = 50
 	}
 	var resp deezerListResponse[deezerTrack]
 	q := url.Values{"limit": {strconv.Itoa(limit)}}
@@ -507,7 +507,7 @@ func (c *Client) ArtistTopTracks(ctx context.Context, id string, limit int) ([]c
 func (c *Client) ArtistAlbums(ctx context.Context, id string, limit int) ([]catalog.Album, error) {
 	id = strings.TrimPrefix(id, ProviderName+":")
 	if limit <= 0 {
-		limit = 10
+		limit = 50
 	}
 	var resp deezerListResponse[deezerAlbum]
 	q := url.Values{"limit": {strconv.Itoa(limit)}}

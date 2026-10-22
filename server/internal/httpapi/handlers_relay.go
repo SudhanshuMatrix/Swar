@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"swar/internal/catalog"
+	"swar/internal/playback"
 )
 
 // YouTube stream URLs are signed for the IP address that asked for them,
@@ -28,7 +29,19 @@ func relayPath(trackID string) string {
 	return "/v1/playback/" + url.PathEscape(trackID) + "/audio"
 }
 
-func needsRelay(t *catalog.Track) bool { return t.Provider == catalog.ProviderYouTube }
+func needsRelay(t *catalog.Track, d ...*playback.Descriptor) bool {
+	if t != nil && t.Provider == catalog.ProviderYouTube {
+		return true
+	}
+	if len(d) > 0 && d[0] != nil {
+		for _, src := range d[0].Sources {
+			if strings.Contains(src.URL, ".googlevideo.com") {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 func isRelayRequest(r *http.Request) bool {
 	return r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/playback/") && strings.HasSuffix(r.URL.Path, "/audio")
@@ -41,7 +54,12 @@ func (s *Server) handlePlaybackAudio(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, r, err)
 		return
 	}
-	if !needsRelay(t) {
+	d, err := s.pb.Resolve(ctx, t.ID)
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	if !needsRelay(t, d) {
 		s.writeErr(w, r, catalog.Invalid("this track streams directly"))
 		return
 	}

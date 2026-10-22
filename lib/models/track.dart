@@ -18,6 +18,9 @@ class Track {
   /// Whether this server allows an offline copy of the track.
   final bool downloadable;
 
+  /// YouTube video ID matched for full playback, when available.
+  final String? youtubeId;
+
   const Track({
     required this.id,
     required this.title,
@@ -28,6 +31,7 @@ class Track {
     this.album = '',
     this.playable = true,
     this.downloadable = false,
+    this.youtubeId,
   });
 
   bool get isDeepSearchResult => provider == 'yt' || id.startsWith('yt:');
@@ -53,6 +57,9 @@ class Track {
     var album = json['album'];
     if (album is Map) album = album['name'];
     final download = json['download'];
+    final ytId = (json['youtube_id'] as String?) ??
+        (json['providerMeta'] is Map ? (json['providerMeta'] as Map)['youtube_id'] as String? : null) ??
+        ((json['id'] as String?)?.startsWith('yt:') == true ? (json['id'] as String).substring(3) : null);
     return Track(
       id: json['id'] as String,
       title: (json['title'] as String?) ?? 'Unknown title',
@@ -63,6 +70,7 @@ class Track {
       album: album is String ? album : '',
       playable: (json['playable'] as bool?) ?? true,
       downloadable: (json['downloadable'] as bool?) ?? (download is Map ? download['eligible'] == true : false),
+      youtubeId: ytId,
     );
   }
 
@@ -76,6 +84,7 @@ class Track {
         'album': album,
         'playable': playable,
         'downloadable': downloadable,
+        'youtube_id': youtubeId,
       };
 
   factory Track.fromMap(Map<dynamic, dynamic> map) {
@@ -91,6 +100,7 @@ class Track {
       album: (map['album'] as String?) ?? '',
       playable: (map['playable'] as bool?) ?? true,
       downloadable: (map['downloadable'] as bool?) ?? false,
+      youtubeId: map['youtube_id'] as String?,
     );
   }
 

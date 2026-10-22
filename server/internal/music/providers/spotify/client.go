@@ -217,11 +217,12 @@ type spArtist struct {
 }
 
 type spAlbum struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	ReleaseDate string    `json:"release_date"`
-	Images      []spImage `json:"images"`
-	TotalTracks int       `json:"total_tracks"`
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	ReleaseDate string     `json:"release_date"`
+	Images      []spImage  `json:"images"`
+	TotalTracks int        `json:"total_tracks"`
+	Artists     []spArtist `json:"artists"`
 }
 
 type spTrack struct {
@@ -304,7 +305,7 @@ func (c *Client) toTrack(t spTrack) catalog.Track {
 		Images:       images,
 		Explicit:     t.Explicit,
 		PlayCount:    int64(t.Popularity),
-		Playable:     t.PreviewURL != "",
+		Playable:     true,
 		Year:         year,
 		ReleaseDate:  t.Album.ReleaseDate,
 		Download:     catalog.DownloadEligibility{Eligible: false, Reason: "preview_only"},
@@ -312,12 +313,59 @@ func (c *Client) toTrack(t spTrack) catalog.Track {
 	}
 }
 
+func (c *Client) toAlbum(a spAlbum, tracks []catalog.Track) catalog.Album {
+	var images []catalog.Image
+	for _, img := range a.Images {
+		quality := fmt.Sprintf("%dx%d", img.Width, img.Height)
+		images = append(images, catalog.Image{Quality: quality, URL: img.URL})
+	}
+	var artists []catalog.ArtistRef
+	for _, ar := range a.Artists {
+		artists = append(artists, catalog.ArtistRef{
+			ID:   catalog.MakeID(ProviderName, ar.ID),
+			Name: ar.Name,
+		})
+	}
+	year := 0
+	if len(a.ReleaseDate) >= 4 {
+		year, _ = strconv.Atoi(a.ReleaseDate[:4])
+	}
+	return catalog.Album{
+		ID:         catalog.MakeID(ProviderName, a.ID),
+		Provider:   ProviderName,
+		ProviderID: a.ID,
+		Name:       a.Name,
+		Artists:    artists,
+		Images:     images,
+		SongCount:  a.TotalTracks,
+		Year:       year,
+		Tracks:     tracks,
+	}
+}
+
+type spArtistFull struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Images    []spImage `json:"images"`
+	Followers struct {
+		Total int64 `json:"total"`
+	} `json:"followers"`
+	Genres       []string `json:"genres"`
+	Popularity   int      `json:"popularity"`
+	ExternalURLs struct {
+		Spotify string `json:"spotify"`
+	} `json:"external_urls"`
+}
+
 func (c *Client) SearchTracks(ctx context.Context, query string, limit int) ([]catalog.Track, error) {
 	if !c.Enabled() {
 		return []catalog.Track{}, nil
 	}
 	if limit <= 0 {
-		limit = 25
+		limit = 50
+	}
+	if limit > 50 {
+		limit = 50
 	}
 	q := url.Values{
 		"q":     {query},
@@ -423,19 +471,109 @@ func (c *Client) Track(ctx context.Context, id string) (*catalog.Track, error) {
 }
 
 func (c *Client) Album(ctx context.Context, id string) (*catalog.Album, error) {
-	return nil, catalog.Unavailable("spotify album details not implemented")
+	if !c.Enabled() {
+		return nil, catalog.Unavailable("spotify is not enabled")
+	}
+	id = strings.TrimPrefix(id, ProviderName+":")
+	var a struct {
+		spAlbum
+		Tracks struct {
+			Items []spTrack `json:"items"`
+		} `json:"tracks"`
+	}
+	if err := c.get(ctx, "/v1/albums/"+url.PathEscape(id), nil, &a); err != nil {
+		return nil, err
+	}
+	var tracks []catalog.Track
+	for _, t := range a.Tracks.Items {
+		// Inherit album info
+		t.Album = a.spAlbum
+		tracks = append(tracks, c.toTrack(t))
+	}
+	alb := c.toAlbum(a.spAlbum, tracks)
+	return &alb, nil
 }
 
 func (c *Client) Artist(ctx context.Context, id string) (*catalog.Artist, error) {
-	return nil, catalog.Unavailable("spotify artist details not implemented")
+	if !c.Enabled() {
+		return nil, catalog.Unavailable("spotify provider is not enabled")
+	}
+	id = strings.TrimPrefix(id, ProviderName+":")
+	var a spArtistFull
+	if err := c.get(ctx, "/v1/artists/"+url.PathEscape(id), nil, &a); err != nil {
+		return nil, err
+	}
+
+	top, _ := c.ArtistTopTracks(ctx, id, 50)
+	albs, _ := c.ArtistAlbums(ctx, id, 50)
+
+	var images []catalog.Image
+	for _, img := range a.Images {
+		quality := fmt.Sprintf("%dx%d", img.Width, img.Height)
+		images = append(images, catalog.Image{Quality: quality, URL: img.URL})
+	}
+
+	return &catalog.Artist{
+		ID:            catalog.MakeID(ProviderName, a.ID),
+		Provider:      ProviderName,
+		ProviderID:    a.ID,
+		Name:          a.Name,
+		URL:           a.ExternalURLs.Spotify,
+		Images:        images,
+		FollowerCount: a.Followers.Total,
+		TopSongs:      top,
+		TopAlbums:     albs,
+	}, nil
 }
 
 func (c *Client) ArtistTopTracks(ctx context.Context, id string, limit int) ([]catalog.Track, error) {
-	return []catalog.Track{}, nil
+	if !c.Enabled() {
+		return []catalog.Track{}, nil
+	}
+	id = strings.TrimPrefix(id, ProviderName+":")
+	if limit <= 0 {
+		limit = 50
+	}
+	var resp struct {
+		Tracks []spTrack `json:"tracks"`
+	}
+	q := url.Values{"market": {"US"}}
+	if err := c.get(ctx, "/v1/artists/"+url.PathEscape(id)+"/top-tracks", q, &resp); err != nil {
+		return nil, err
+	}
+	out := make([]catalog.Track, 0, len(resp.Tracks))
+	for _, t := range resp.Tracks {
+		out = append(out, c.toTrack(t))
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (c *Client) ArtistAlbums(ctx context.Context, id string, limit int) ([]catalog.Album, error) {
-	return []catalog.Album{}, nil
+	if !c.Enabled() {
+		return []catalog.Album{}, nil
+	}
+	id = strings.TrimPrefix(id, ProviderName+":")
+	if limit <= 0 {
+		limit = 50
+	}
+	var resp struct {
+		Items []spAlbum `json:"items"`
+	}
+	q := url.Values{
+		"include_groups": {"album,single"},
+		"limit":          {strconv.Itoa(min(limit, 50))},
+	}
+	if err := c.get(ctx, "/v1/artists/"+url.PathEscape(id)+"/albums", q, &resp); err != nil {
+		return nil, err
+	}
+	out := make([]catalog.Album, 0, len(resp.Items))
+	for _, a := range resp.Items {
+		out = append(out, c.toAlbum(a, nil))
+	}
+	return out, nil
 }
 
 func (c *Client) Playlist(ctx context.Context, id string, limit int) (*catalog.Playlist, error) {

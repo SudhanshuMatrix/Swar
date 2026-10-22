@@ -109,6 +109,24 @@ func (e *Engine) Supports(provider string) bool {
 }
 
 func (e *Engine) SearchSongs(ctx context.Context, q string, page, limit int) (*catalog.Page[catalog.Track], error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	tracks, _ := e.federated.SearchTracksFast(ctx, q, limit)
+	start := page * limit
+	return &catalog.Page[catalog.Track]{
+		Total:   len(tracks),
+		Start:   start,
+		Page:    page,
+		Limit:   limit,
+		Results: tracks,
+	}, nil
+}
+
+func (e *Engine) SearchSongsDeep(ctx context.Context, q string, page, limit int) (*catalog.Page[catalog.Track], error) {
+	if limit <= 0 {
+		limit = 50
+	}
 	tracks, _ := e.federated.SearchTracks(ctx, q, limit)
 	start := page * limit
 	return &catalog.Page[catalog.Track]{
@@ -318,16 +336,48 @@ func (e *Engine) Artist(ctx context.Context, id string, o catalog.ArtistOptions)
 		pid = id
 	}
 
+	var a *catalog.Artist
 	if prv, ok := e.providers[provider]; ok {
-		return prv.Artist(ctx, pid)
-	}
-
-	for _, p := range e.prvList {
-		if a, err := p.Artist(ctx, pid); err == nil && a != nil {
-			return a, nil
+		if res, err := prv.Artist(ctx, pid); err == nil && res != nil {
+			a = res
 		}
 	}
-	return nil, catalog.NotFound("artist not found")
+
+	if a == nil {
+		for _, p := range e.prvList {
+			if res, err := p.Artist(ctx, pid); err == nil && res != nil {
+				a = res
+				break
+			}
+		}
+	}
+	if a == nil {
+		return nil, catalog.NotFound("artist not found")
+	}
+
+	// Backfill artist images if missing
+	if len(a.Images) == 0 {
+		if len(a.TopSongs) > 0 && len(a.TopSongs[0].Images) > 0 {
+			a.Images = a.TopSongs[0].Images
+		} else {
+			if dz, ok := e.providers[catalog.ProviderDeezer]; ok {
+				if refs, err := dz.SearchArtists(ctx, a.Name, 1); err == nil && len(refs) > 0 && len(refs[0].Image) > 0 {
+					a.Images = refs[0].Image
+				}
+			}
+			if len(a.Images) == 0 {
+				if sp, ok := e.providers[catalog.ProviderSpotify]; ok {
+					if en, ok := sp.(interface{ Enabled() bool }); !ok || en.Enabled() {
+						if refs, err := sp.SearchArtists(ctx, a.Name, 1); err == nil && len(refs) > 0 && len(refs[0].Image) > 0 {
+							a.Images = refs[0].Image
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return a, nil
 }
 
 func (e *Engine) ArtistByLink(ctx context.Context, token string, o catalog.ArtistOptions) (*catalog.Artist, error) {
@@ -347,7 +397,7 @@ func (e *Engine) ArtistSongs(ctx context.Context, id string, o catalog.ArtistOpt
 
 	limit := o.SongCount
 	if limit <= 0 {
-		limit = 25
+		limit = 50
 	}
 
 	if prv, ok := e.providers[provider]; ok {
@@ -374,7 +424,7 @@ func (e *Engine) ArtistAlbums(ctx context.Context, id string, o catalog.ArtistOp
 
 	limit := o.AlbumCount
 	if limit <= 0 {
-		limit = 25
+		limit = 50
 	}
 
 	if prv, ok := e.providers[provider]; ok {

@@ -290,7 +290,7 @@ func makeArtworkImages(art100 string) []catalog.Image {
 
 func (c *Client) SearchTracks(ctx context.Context, query string, limit int) ([]catalog.Track, error) {
 	if limit <= 0 {
-		limit = 25
+		limit = 50
 	}
 	q := url.Values{
 		"term":   {query},
@@ -430,7 +430,11 @@ func (c *Client) Artist(ctx context.Context, id string) (*catalog.Artist, error)
 	}
 
 	idStr := strconv.FormatInt(artItem.ArtistID, 10)
-	albs, _ := c.ArtistAlbums(ctx, id, 10)
+	var images []catalog.Image
+	if len(topSongs) > 0 && len(topSongs[0].Images) > 0 {
+		images = topSongs[0].Images
+	}
+	albs, _ := c.ArtistAlbums(ctx, id, 50)
 
 	return &catalog.Artist{
 		ID:         catalog.MakeID(ProviderName, idStr),
@@ -438,6 +442,7 @@ func (c *Client) Artist(ctx context.Context, id string) (*catalog.Artist, error)
 		ProviderID: idStr,
 		Name:       artItem.ArtistName,
 		URL:        artItem.ArtistViewURL,
+		Images:     images,
 		TopSongs:   topSongs,
 		TopAlbums:  albs,
 	}, nil
@@ -446,7 +451,7 @@ func (c *Client) Artist(ctx context.Context, id string) (*catalog.Artist, error)
 func (c *Client) ArtistTopTracks(ctx context.Context, id string, limit int) ([]catalog.Track, error) {
 	id = strings.TrimPrefix(id, ProviderName+":")
 	if limit <= 0 {
-		limit = 10
+		limit = 50
 	}
 	q := url.Values{"id": {id}, "entity": {"song"}, "limit": {strconv.Itoa(limit)}}
 	var resp itunesResponse
@@ -465,7 +470,7 @@ func (c *Client) ArtistTopTracks(ctx context.Context, id string, limit int) ([]c
 func (c *Client) ArtistAlbums(ctx context.Context, id string, limit int) ([]catalog.Album, error) {
 	id = strings.TrimPrefix(id, ProviderName+":")
 	if limit <= 0 {
-		limit = 10
+		limit = 50
 	}
 	q := url.Values{"id": {id}, "entity": {"album"}, "limit": {strconv.Itoa(limit)}}
 	var resp itunesResponse

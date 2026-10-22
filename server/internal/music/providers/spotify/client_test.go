@@ -119,3 +119,84 @@ func TestSpotifyAuthAndSearch(t *testing.T) {
 		t.Errorf("unexpected isrc: %s", tr.ProviderMeta["isrc"])
 	}
 }
+
+func TestSpotifyArtistAndTracks(t *testing.T) {
+	authJSON := `{"access_token": "test-token-123", "token_type": "Bearer", "expires_in": 3600}`
+	artistJSON := `{
+		"id": "4YRxDV8wJFPHPTeXepOstw",
+		"name": "Arijit Singh",
+		"images": [
+			{"url": "https://i.scdn.co/image/artist640", "width": 640, "height": 640}
+		],
+		"followers": {"total": 85000000},
+		"genres": ["filmi", "bollywood"],
+		"popularity": 92,
+		"external_urls": {"spotify": "https://open.spotify.com/artist/4YRxDV8wJFPHPTeXepOstw"}
+	}`
+	topTracksJSON := `{
+		"tracks": [
+			{
+				"id": "trk1",
+				"name": "Channa Mereya",
+				"duration_ms": 289000,
+				"popularity": 80,
+				"artists": [{"id": "4YRxDV8wJFPHPTeXepOstw", "name": "Arijit Singh"}],
+				"album": {
+					"id": "alb1",
+					"name": "Ae Dil Hai Mushkil",
+					"release_date": "2016-10-28",
+					"images": [{"url": "https://i.scdn.co/image/alb640", "width": 640, "height": 640}]
+				}
+			}
+		]
+	}`
+
+	hc := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		if strings.Contains(req.URL.Path, "/api/token") {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewBufferString(authJSON)),
+			}, nil
+		}
+		if strings.Contains(req.URL.Path, "/top-tracks") {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewBufferString(topTracksJSON)),
+			}, nil
+		}
+		if strings.Contains(req.URL.Path, "/v1/artists/") {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewBufferString(artistJSON)),
+			}, nil
+		}
+		return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(bytes.NewBufferString(`{}`))}, nil
+	})
+
+	client := New(Options{
+		ClientOptions: providers.ClientOptions{HTTPClient: hc},
+		ClientID:      "test-client-id",
+		ClientSecret:  "test-client-secret",
+		AuthURL:       "https://accounts.spotify.com/api/token",
+	})
+
+	art, err := client.Artist(context.Background(), "4YRxDV8wJFPHPTeXepOstw")
+	if err != nil {
+		t.Fatalf("Artist failed: %v", err)
+	}
+	if art.Name != "Arijit Singh" {
+		t.Errorf("unexpected name: %s", art.Name)
+	}
+	if len(art.Images) == 0 || art.Images[0].URL != "https://i.scdn.co/image/artist640" {
+		t.Errorf("expected artist image, got: %v", art.Images)
+	}
+	if art.FollowerCount != 85000000 {
+		t.Errorf("expected 85000000 followers, got %d", art.FollowerCount)
+	}
+	if len(art.TopSongs) != 1 || art.TopSongs[0].Title != "Channa Mereya" {
+		t.Errorf("expected top song Channa Mereya, got: %v", art.TopSongs)
+	}
+}

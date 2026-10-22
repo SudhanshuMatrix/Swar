@@ -50,7 +50,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, r, err)
 		return
 	}
-	limit, err := intParam(r, "limit", 10, 1, 50)
+	limit, err := intParam(r, "limit", 30, 1, 100)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
@@ -126,7 +126,7 @@ func (s *Server) handleTrack(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRelated(w http.ResponseWriter, r *http.Request) {
-	limit, err := intParam(r, "limit", 10, 1, 50)
+	limit, err := intParam(r, "limit", 30, 1, 100)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
@@ -175,10 +175,10 @@ func artistOptions(r *http.Request) (catalog.ArtistOptions, error) {
 	if o.Page, err = intParam(r, "page", 0, 0, 1000); err != nil {
 		return o, err
 	}
-	if o.SongCount, err = intParam(r, "songCount", 10, 0, 50); err != nil {
+	if o.SongCount, err = intParam(r, "songCount", 50, 0, 100); err != nil {
 		return o, err
 	}
-	if o.AlbumCount, err = intParam(r, "albumCount", 10, 0, 50); err != nil {
+	if o.AlbumCount, err = intParam(r, "albumCount", 50, 0, 100); err != nil {
 		return o, err
 	}
 	switch o.SortBy {

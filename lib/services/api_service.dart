@@ -149,7 +149,7 @@ class ApiService {
 
   // ---- Catalog (legacy routes, unchanged contract) ----
 
-  Future<List<Track>> search(String query, {int limit = 25}) async {
+  Future<List<Track>> search(String query, {int limit = 50}) async {
     final uri = Uri.parse('$baseUrl/search').replace(queryParameters: {
       'q': query,
       'limit': '$limit',
@@ -296,9 +296,9 @@ class ApiService {
 
   /// One page of an artist's songs, most popular first, with the total the
   /// catalog reports for the artist.
-  Future<({List<Track> tracks, int total})> artistSongs(String id, {int page = 0}) async {
+  Future<({List<Track> tracks, int total})> artistSongs(String id, {int page = 0, int songCount = 50}) async {
     final data =
-        await _public('GET', '/v1/artists/${Uri.encodeComponent(id)}/songs?page=$page') as Map<String, dynamic>;
+        await _public('GET', '/v1/artists/${Uri.encodeComponent(id)}/songs?page=$page&songCount=$songCount') as Map<String, dynamic>;
     final tracks =
         ((data['results'] as List?) ?? const []).whereType<Map<String, dynamic>>().map(Track.fromJson).toList();
     return (tracks: tracks, total: (data['total'] as num?)?.toInt() ?? 0);

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"swar/internal/cache"
+	"swar/internal/music/innertube"
 )
 
 // Provider is implemented by a catalog upstream (currently Saavn). All IDs
@@ -65,10 +66,62 @@ type Service struct {
 	cache       *cache.Cache
 	ttl         TTLs
 	loadTimeout time.Duration
+	ytResolver  *innertube.Resolver
+	ytMatchMu   sync.RWMutex
+	ytMatched   map[string]string // trackID -> youtubeID
 }
 
 func NewService(primary Provider, c *cache.Cache, ttl TTLs) *Service {
-	return &Service{primary: primary, sources: map[string]TrackSource{}, cache: c, ttl: ttl, loadTimeout: 20 * time.Second}
+	return &Service{
+		primary:     primary,
+		sources:     map[string]TrackSource{},
+		cache:       c,
+		ttl:         ttl,
+		loadTimeout: 20 * time.Second,
+		ytResolver:  innertube.NewResolver(),
+		ytMatched:   make(map[string]string),
+	}
+}
+
+// MatchedYouTubeID returns the matched YouTube video ID for a track if known.
+func (s *Service) MatchedYouTubeID(trackID string) string {
+	s.ytMatchMu.RLock()
+	defer s.ytMatchMu.RUnlock()
+	if s.ytMatched == nil {
+		return ""
+	}
+	return s.ytMatched[trackID]
+}
+
+// SetMatchedYouTubeID records the matched YouTube video ID for a track.
+func (s *Service) SetMatchedYouTubeID(trackID, ytID string) {
+	s.ytMatchMu.Lock()
+	defer s.ytMatchMu.Unlock()
+	if s.ytMatched == nil {
+		s.ytMatched = make(map[string]string)
+	}
+	s.ytMatched[trackID] = ytID
+}
+
+// MatchYouTube resolves a track to its matching YouTube video ID.
+func (s *Service) MatchYouTube(ctx context.Context, t *Track) (string, error) {
+	if t == nil {
+		return "", fmt.Errorf("nil track")
+	}
+	if ytID := s.MatchedYouTubeID(t.ID); ytID != "" {
+		return ytID, nil
+	}
+
+	// 1. Try zero-key InnerTube resolver first
+	if s.ytResolver != nil {
+		ytID, err := s.ytResolver.ResolveYouTubeID(ctx, t.Title, t.ArtistNames(), t.DurationSec)
+		if err == nil && ytID != "" {
+			s.SetMatchedYouTubeID(t.ID, ytID)
+			return ytID, nil
+		}
+	}
+
+	return "", fmt.Errorf("no youtube match found")
 }
 
 // RegisterSource adds a single-track source for a provider prefix.
@@ -412,6 +465,16 @@ func (s *Service) MediaSources(ctx context.Context, id string) ([]MediaSource, t
 		return nil, time.Time{}, Invalid("invalid track id")
 	}
 	if s.isPrimary(provider) {
+		// Attempt full audio playback via YouTube match if YouTube source is available
+		if ytSrc, ok := s.sources[ProviderYouTube]; ok {
+			if t, err := s.Track(ctx, id); err == nil && t != nil {
+				if ytID, err := s.MatchYouTube(ctx, t); err == nil && ytID != "" {
+					if srcs, exp, err := ytSrc.MediaSources(ctx, ytID); err == nil && len(srcs) > 0 {
+						return srcs, exp, nil
+					}
+				}
+			}
+		}
 		return s.primary.MediaSources(ctx, MakeID(provider, pid))
 	}
 	if src, ok := s.sources[provider]; ok {

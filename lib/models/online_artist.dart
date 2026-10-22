@@ -16,12 +16,33 @@ class OnlineArtist {
   factory OnlineArtist.fromJson(Map<String, dynamic> json) {
     // Profiles use "images"; search results use "image".
     final images = ((json['images'] ?? json['image']) as List?)?.whereType<Map>().toList() ?? const [];
+    String img = '';
+    if (images.isNotEmpty) {
+      for (final item in images.reversed) {
+        final u = item['url'] as String?;
+        if (u != null && u.isNotEmpty) {
+          img = u;
+          break;
+        }
+      }
+    }
+    if (img.isEmpty) {
+      img = (json['imageUrl'] as String?) ??
+          (json['image_url'] as String?) ??
+          (json['thumbnail'] as String?) ??
+          (json['picture'] as String?) ??
+          '';
+    }
+    final topSongs =
+        ((json['topSongs'] as List?) ?? const []).whereType<Map<String, dynamic>>().map(Track.fromJson).toList();
+    if (img.isEmpty && topSongs.isNotEmpty) {
+      img = topSongs.first.thumbnailUrl;
+    }
     return OnlineArtist(
       id: json['id'] as String,
       name: (json['name'] as String?) ?? 'Artist',
-      imageUrl: images.isEmpty ? '' : (images.last['url'] as String? ?? ''),
-      topSongs:
-          ((json['topSongs'] as List?) ?? const []).whereType<Map<String, dynamic>>().map(Track.fromJson).toList(),
+      imageUrl: img,
+      topSongs: topSongs,
       songCount: (json['songCount'] as num?)?.toInt(),
     );
   }

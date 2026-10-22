@@ -59,7 +59,7 @@ func (s *Service) Search(ctx context.Context, rawQuery string, typ Type, page, l
 	if err != nil {
 		return nil, err
 	}
-	limit = clamp(limit, 1, 50)
+	limit = clamp(limit, 1, 100)
 	page = clamp(page, 0, 100)
 	r := &Result{Query: q}
 
