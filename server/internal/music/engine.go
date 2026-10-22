@@ -508,3 +508,29 @@ func (e *Engine) MediaSources(ctx context.Context, id string) ([]catalog.MediaSo
 
 	return nil, time.Time{}, catalog.Unavailable("no media source available for this provider")
 }
+
+// Providers lists the prefixes of the enabled providers (dz, it, mb, sp).
+func (e *Engine) Providers() []string {
+	out := make([]string, 0, len(e.prvList))
+	for _, p := range e.prvList {
+		out = append(out, p.Name())
+	}
+	return out
+}
+
+// Source adapts the engine to one provider prefix, so the catalog can look
+// up Deep Search songs (and their previews) by ID.
+func (e *Engine) Source(provider string) catalog.TrackSource { return engineSource{e, provider} }
+
+type engineSource struct {
+	e        *Engine
+	provider string
+}
+
+func (s engineSource) Track(ctx context.Context, providerID string) (*catalog.Track, error) {
+	return s.e.Track(ctx, catalog.MakeID(s.provider, providerID))
+}
+
+func (s engineSource) MediaSources(ctx context.Context, providerID string) ([]catalog.MediaSource, time.Time, error) {
+	return s.e.MediaSources(ctx, catalog.MakeID(s.provider, providerID))
+}

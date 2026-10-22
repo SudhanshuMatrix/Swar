@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show ScaffoldMessenger, SnackBar, Text;
 
 import '../core/errors.dart';
 import '../models/track.dart';
@@ -323,21 +324,7 @@ class PlayerProvider extends ChangeNotifier {
       } else if (track.isDeepSearchResult && YouTubeAudio.supported) {
         streamUrl = await _loadFromYouTube(track, start);
       } else {
-        final stream = await api.resolveAudio(track.id);
-        streamUrl = stream.url;
-        final ytId = stream.track.youtubeId ?? track.youtubeId;
-        if (YouTubeAudio.supported && ytId != null && ytId.isNotEmpty) {
-          try {
-            final ytUrl = await YouTubeAudio.streamUrl(ytId);
-            await audioHandler.loadUrl(ytUrl, _mediaItem(stream.track), startAt: start);
-            streamUrl = ytUrl;
-          } catch (err) {
-            debugPrint('Swar: Device YouTube playback failed for $ytId, falling back to server relay: $err');
-            await audioHandler.loadUrl(stream.url, _mediaItem(stream.track), startAt: start);
-          }
-        } else {
-          await audioHandler.loadUrl(stream.url, _mediaItem(stream.track), startAt: start);
-        }
+        streamUrl = await _loadCatalogSong(track, start);
       }
       if (start != null) _position = start;
       if (autoplay) await audioHandler.play();
@@ -360,6 +347,64 @@ class PlayerProvider extends ChangeNotifier {
       _loading = false;
       notifyListeners();
     }
+  }
+
+  /// JioSaavn songs play straight from the server's URL. Deep Search catalog
+  /// songs (Spotify, Deezer, iTunes...) only come with a 30-second preview,
+  /// so the full song is played from YouTube on this device: the
+  /// video the server matched, or else one found by searching YouTube here.
+  /// The web can't reach YouTube, so it uses the server's relay. The
+  /// preview is the last resort. Returns the server URL when one was used.
+  Future<String?> _loadCatalogSong(Track track, Duration? start) async {
+    StreamResult? stream;
+    Object? serverError;
+    try {
+      stream = await api.resolveAudio(track.id);
+    } catch (err) {
+      serverError = err;
+    }
+    final item = _mediaItem(stream?.track ?? track);
+    // JioSaavn gives the full song directly.
+    if (stream != null && stream.url.isNotEmpty && !stream.isPreview) {
+      await audioHandler.loadUrl(stream.url, item, startAt: start);
+      return stream.url;
+    }
+    String? ytId = stream?.track.youtubeId ?? track.youtubeId;
+    if (YouTubeAudio.supported) {
+      try {
+        ytId ??= await YouTubeAudio.findVideoId(track.title, track.artist, track.duration);
+        if (ytId != null) {
+          await audioHandler.loadUrl(await YouTubeAudio.streamUrl(ytId), item, startAt: start);
+          return null;
+        }
+      } catch (err) {
+        debugPrint('Swar: full song from YouTube failed for ${track.id} ($ytId): $err');
+        if (ytId != null) YouTubeAudio.forget(ytId);
+      }
+    } else if (ytId != null) {
+      try {
+        final relay = await api.resolveAudio('yt:$ytId');
+        await audioHandler.loadUrl(relay.url, item, startAt: start);
+        return relay.url;
+      } catch (err) {
+        debugPrint('Swar: server relay failed for ${track.id} ($ytId): $err');
+      }
+    }
+    if (stream != null && stream.url.isNotEmpty) {
+      await audioHandler.loadUrl(stream.url, item, startAt: start);
+      if (stream.isPreview) {
+        _showNotice(
+            'Only a 30-second preview of "${track.title}" could be played. The full song wasn\'t found on YouTube.');
+      }
+      return stream.url;
+    }
+    throw serverError ?? const YouTubeAudioException("Couldn't find the full song on YouTube.");
+  }
+
+  void _showNotice(String message) {
+    final ctx = ErrorPopup.navigatorKey.currentContext;
+    if (ctx == null) return;
+    ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Plays a Deep Search song from YouTube on this device. If YouTube won't

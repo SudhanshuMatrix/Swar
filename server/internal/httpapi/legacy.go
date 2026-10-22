@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -94,6 +95,10 @@ func (s *Server) legacyResolve(w http.ResponseWriter, r *http.Request, wantVideo
 		legacyError(w, r, err)
 		return
 	}
+	if !wantVideo && t.Provider != catalog.ProviderYouTube && t.Provider != catalog.ProviderSaavn {
+		s.legacyCatalogTrack(w, r, t)
+		return
+	}
 	d, err := s.pb.Resolve(r.Context(), t.ID)
 	if err != nil {
 		legacyError(w, r, err)
@@ -164,4 +169,28 @@ func (s *Server) handleLegacyRelated(w http.ResponseWriter, r *http.Request) {
 	}
 	noStore(w)
 	writeJSON(w, http.StatusOK, map[string]any{"results": legacyList(ts)})
+}
+
+// legacyCatalogTrack answers quickly for Deep Search catalog songs (Spotify,
+// Deezer, iTunes, MusicBrainz): the matching YouTube video, which the app plays
+// itself for the full song, plus the catalog's 30-second preview as a last
+// resort ("preview": true). It never runs yt-dlp here, because YouTube
+// blocks that from hosted servers and waiting for it made every song slow.
+func (s *Server) legacyCatalogTrack(w http.ResponseWriter, r *http.Request, t *catalog.Track) {
+	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	ytID, _ := s.cat.MatchYouTube(ctx, t)
+	cancel()
+	preview := s.cat.PreviewURL(r.Context(), t)
+	if ytID == "" && preview == "" {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "Couldn't find this song on YouTube", "code": "unavailable"})
+		return
+	}
+	resp := map[string]any{
+		"id": t.ID, "title": t.Title, "artist": t.ArtistNames(), "thumbnail": catalog.BestImage(t.Images),
+		"duration": t.DurationSec, "audio_url": preview, "preview": preview != "",
+	}
+	if ytID != "" {
+		resp["youtube_id"] = ytID
+	}
+	writeJSON(w, http.StatusOK, resp)
 }

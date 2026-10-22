@@ -10,9 +10,13 @@ import '../models/track.dart';
 import '../state/app_status.dart';
 
 class StreamResult {
+  /// Empty when the server only knows the song's YouTube video.
   final String url;
   final Track track;
-  StreamResult({required this.url, required this.track});
+
+  /// [url] is the catalog's 30-second preview, not the full song.
+  final bool isPreview;
+  StreamResult({required this.url, required this.track, this.isPreview = false});
 }
 
 /// An error from the Swar backend with its stable [code]
@@ -178,10 +182,10 @@ class ApiService {
       throw _legacyError(res, 'Could not resolve audio');
     }
     final data = jsonDecode(res.body) as Map<String, dynamic>;
-    var url = data['audio_url'] as String;
+    var url = (data['audio_url'] as String?) ?? '';
     // Deep Search audio is relayed by the server and comes back as a path.
     if (url.startsWith('/')) url = '$baseUrl$url';
-    return StreamResult(url: url, track: Track.fromJson(data));
+    return StreamResult(url: url, track: Track.fromJson(data), isPreview: data['preview'] == true);
   }
 
   /// Why the server's audio relay won't serve [url] (a Deep Search song),
@@ -297,8 +301,8 @@ class ApiService {
   /// One page of an artist's songs, most popular first, with the total the
   /// catalog reports for the artist.
   Future<({List<Track> tracks, int total})> artistSongs(String id, {int page = 0, int songCount = 50}) async {
-    final data =
-        await _public('GET', '/v1/artists/${Uri.encodeComponent(id)}/songs?page=$page&songCount=$songCount') as Map<String, dynamic>;
+    final data = await _public('GET', '/v1/artists/${Uri.encodeComponent(id)}/songs?page=$page&songCount=$songCount')
+        as Map<String, dynamic>;
     final tracks =
         ((data['results'] as List?) ?? const []).whereType<Map<String, dynamic>>().map(Track.fromJson).toList();
     return (tracks: tracks, total: (data['total'] as num?)?.toInt() ?? 0);

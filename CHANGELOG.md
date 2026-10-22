@@ -12,6 +12,15 @@ release notes.
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-10-22
+
+### Changed
+
+- Main search is JioSaavn and YouTube Music together: JioSaavn's songs, singers, albums and playlists, with YouTube Music songs mixed in. JioSaavn songs play in full from JioSaavn, and YouTube Music songs play in full from YouTube on your device. Search never waits more than 3 seconds for YouTube Music.
+- Deep Search now also searches Deezer, iTunes and MusicBrainz (and Spotify when the server has keys) next to YouTube, and still shows those results when YouTube is blocking the server.
+- Full songs for Deep Search catalog results: Deezer, iTunes and Spotify only give 30-second previews, so the app finds the song on YouTube and plays the full audio on your device. A preview only plays when no full song is found, and the app says so.
+- Songs saved from JioSaavn before play again.
+
 ## [1.2.5] - 2026-10-22
 
 ### Changed

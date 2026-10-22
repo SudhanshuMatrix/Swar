@@ -24,6 +24,8 @@ import (
 	"swar/internal/observability"
 	"swar/internal/playback"
 	"swar/internal/providers/deepsearch"
+	"swar/internal/providers/saavn"
+	"swar/internal/providers/ytmusic"
 	"swar/internal/radio"
 	"swar/internal/recommendations"
 	"swar/internal/repository"
@@ -75,6 +77,7 @@ func run() error {
 	errCh := make(chan error, 1)
 	go func() {
 		log.Info("listening", "addr", cfg.Addr, "env", cfg.Env,
+			"saavn_media_urls", cfg.SaavnMediaURLs, "ytmusic_search", cfg.YTMusicSearch,
 			"deezer", cfg.MusicProviderDeezerEnabled, "itunes", cfg.MusicProviderITunesEnabled,
 			"musicbrainz", cfg.MusicProviderMusicBrainzEnabled, "deep_search", cfg.DeepSearchEnabled,
 			"deep_search_playback", cfg.DeepSearchPlayback)
@@ -104,6 +107,16 @@ func build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*httpapi.
 		return nil, nil, err
 	}
 
+	saavnClient, err := saavn.New(saavn.Options{
+		BaseURL: cfg.SaavnBaseURL, Timeout: cfg.SaavnTimeout, MaxConcurrency: cfg.SaavnMaxConcurrency,
+		MaxRetries: cfg.SaavnMaxRetries, MaxBodyBytes: cfg.SaavnMaxBodyBytes, MediaURLs: cfg.SaavnMediaURLs,
+		Downloads: cfg.SaavnDownloads, Logger: log, Metrics: metrics,
+	})
+	if err != nil {
+		store.Close()
+		return nil, nil, err
+	}
+	// Deezer, iTunes, MusicBrainz and Spotify feed Deep Search.
 	musicEngine := music.NewEngine(music.EngineOptions{
 		DeezerEnabled:       cfg.MusicProviderDeezerEnabled,
 		ITunesEnabled:       cfg.MusicProviderITunesEnabled,
@@ -131,8 +144,23 @@ func build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*httpapi.
 	metrics.Gauge("cache_evictions_total", func() float64 { return float64(c.Stats().Evictions) })
 	metrics.Gauge("cache_coalesced_total", func() float64 { return float64(c.Stats().Coalesced) })
 
-	cat := catalog.NewService(musicEngine, c, catalog.DefaultTTLs)
+	// Main catalog: JioSaavn, with YouTube Music songs mixed into search.
+	cat := catalog.NewService(saavnClient, c, catalog.DefaultTTLs)
 	cat.RegisterSource(catalog.ProviderYouTube, deep)
+	if cfg.YTMusicSearch {
+		ytm := ytmusic.New(4 * time.Second)
+		cat.SetExtraSongSearch(ytm.SearchSongs)
+	}
+	for _, p := range musicEngine.Providers() {
+		cat.RegisterSource(p, musicEngine.Source(p))
+	}
+	cat.SetDeepSongSearch(func(ctx context.Context, q string, limit int) ([]catalog.Track, error) {
+		p, err := musicEngine.SearchSongsDeep(ctx, q, 0, limit)
+		if err != nil {
+			return nil, err
+		}
+		return p.Results, nil
+	})
 
 	resolver := playback.NewResolver(cat, c, metrics)
 	lib := library.New(store, cat)

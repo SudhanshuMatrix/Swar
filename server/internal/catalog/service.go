@@ -69,7 +69,25 @@ type Service struct {
 	ytResolver  *innertube.Resolver
 	ytMatchMu   sync.RWMutex
 	ytMatched   map[string]string // trackID -> youtubeID
+
+	// extraSongs adds songs from other sources (YouTube Music) to main
+	// song search; deep searches the catalogs Deep Search adds.
+	extraSongs SongSearch
+	deep       SongSearch
 }
+
+// SongSearch finds songs for a query.
+type SongSearch func(ctx context.Context, q string, limit int) ([]Track, error)
+
+// extraSongsWait bounds how long main search waits for the extra source:
+// past it, the primary's results go out alone.
+const extraSongsWait = 3 * time.Second
+
+// SetExtraSongSearch adds a second source to main song search.
+func (s *Service) SetExtraSongSearch(fn SongSearch) { s.extraSongs = fn }
+
+// SetDeepSongSearch sets the catalog search Deep Search adds to YouTube.
+func (s *Service) SetDeepSongSearch(fn SongSearch) { s.deep = fn }
 
 func NewService(primary Provider, c *cache.Cache, ttl TTLs) *Service {
 	return &Service{
@@ -179,12 +197,67 @@ func load[T any](ctx context.Context, s *Service, ttl time.Duration, key string,
 func (s *Service) SearchSongs(ctx context.Context, q string, page, limit int) (*Page[Track], error) {
 	k := cacheKey("search:songs", strings.ToLower(q), page, limit)
 	p, err := load(ctx, s, s.ttl.Search, k, func(ctx context.Context) (*Page[Track], error) {
-		return s.primary.SearchSongs(ctx, q, page, limit)
+		if s.extraSongs == nil || page > 0 {
+			return s.primary.SearchSongs(ctx, q, page, limit)
+		}
+		// Ask both sources at once; the extra one gets a short leash.
+		type extra struct {
+			tracks []Track
+		}
+		ch := make(chan extra, 1)
+		go func() {
+			ectx, cancel := context.WithTimeout(ctx, extraSongsWait)
+			defer cancel()
+			ts, _ := s.extraSongs(ectx, q, limit)
+			ch <- extra{ts}
+		}()
+		p, err := s.primary.SearchSongs(ctx, q, page, limit)
+		more := (<-ch).tracks
+		if err != nil {
+			if len(more) == 0 {
+				return nil, err
+			}
+			p = &Page[Track]{Page: page, Limit: limit}
+		}
+		merged := interleave(p.Results, more, limit)
+		out := *p
+		out.Results = merged
+		if out.Total < len(merged) {
+			out.Total = len(merged)
+		}
+		return &out, nil
 	})
 	if err == nil {
 		s.Remember(p.Results...)
 	}
 	return p, err
+}
+
+// interleave alternates the two lists (a first), dropping songs whose title
+// and first artist already appeared, up to limit.
+func interleave(a, b []Track, limit int) []Track {
+	out := make([]Track, 0, min(limit, len(a)+len(b)))
+	seen := map[string]bool{}
+	add := func(t Track) {
+		key := strings.ToLower(strings.TrimSpace(t.Title))
+		if len(t.Artists) > 0 {
+			key += "|" + strings.ToLower(strings.TrimSpace(t.Artists[0].Name))
+		}
+		if seen[key] || len(out) >= limit {
+			return
+		}
+		seen[key] = true
+		out = append(out, t)
+	}
+	for i := 0; i < len(a) || i < len(b); i++ {
+		if i < len(a) {
+			add(a[i])
+		}
+		if i < len(b) {
+			add(b[i])
+		}
+	}
+	return out
 }
 
 func (s *Service) SearchAlbums(ctx context.Context, q string, page, limit int) (*Page[Album], error) {
@@ -457,6 +530,40 @@ func (s *Service) Browse(ctx context.Context, language string) ([]Collection, er
 	})
 }
 
+// PreviewURL is a catalog song's own short preview (Deezer, iTunes,
+// Spotify), or "" when it has none. It never touches YouTube.
+func (s *Service) PreviewURL(ctx context.Context, t *Track) string {
+	if t == nil {
+		return ""
+	}
+	srcs, _, err := s.MediaSources(ctx, t.ID)
+	if err != nil {
+		return ""
+	}
+	for _, src := range srcs {
+		if src.Kind == "audio" && src.URL != "" {
+			return src.URL
+		}
+	}
+	return ""
+}
+
+// SearchSongsDeep searches the catalogs Deep Search adds next to YouTube
+// (Deezer, iTunes, MusicBrainz, Spotify).
+func (s *Service) SearchSongsDeep(ctx context.Context, q string, limit int) ([]Track, error) {
+	if s.deep == nil {
+		return nil, nil
+	}
+	ts, err := load(ctx, s, s.ttl.Search, cacheKey("search:deep", strings.ToLower(q), limit), func(ctx context.Context) ([]Track, error) {
+		return s.deep(ctx, q, limit)
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.Remember(ts...)
+	return ts, nil
+}
+
 // MediaSources is not cached here: the playback package owns descriptor
 // caching because it knows about expiry.
 func (s *Service) MediaSources(ctx context.Context, id string) ([]MediaSource, time.Time, error) {
@@ -465,16 +572,6 @@ func (s *Service) MediaSources(ctx context.Context, id string) ([]MediaSource, t
 		return nil, time.Time{}, Invalid("invalid track id")
 	}
 	if s.isPrimary(provider) {
-		// Attempt full audio playback via YouTube match if YouTube source is available
-		if ytSrc, ok := s.sources[ProviderYouTube]; ok {
-			if t, err := s.Track(ctx, id); err == nil && t != nil {
-				if ytID, err := s.MatchYouTube(ctx, t); err == nil && ytID != "" {
-					if srcs, exp, err := ytSrc.MediaSources(ctx, ytID); err == nil && len(srcs) > 0 {
-						return srcs, exp, nil
-					}
-				}
-			}
-		}
 		return s.primary.MediaSources(ctx, MakeID(provider, pid))
 	}
 	if src, ok := s.sources[provider]; ok {

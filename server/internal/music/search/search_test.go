@@ -210,3 +210,26 @@ func TestFederatedSearchWithPartialFailure(t *testing.T) {
 		t.Errorf("expected error from provider 'it' recorded in errors map")
 	}
 }
+
+func TestMainSearchUsesSpotifyAndDeepSearchAll(t *testing.T) {
+	sp := &mockProvider{name: catalog.ProviderSpotify, tracks: []catalog.Track{{ID: "sp:1", Provider: catalog.ProviderSpotify, Title: "Kesariya"}}}
+	dz := &mockProvider{name: catalog.ProviderDeezer, tracks: []catalog.Track{{ID: "dz:1", Provider: catalog.ProviderDeezer, Title: "Kesariya Rangu"}}}
+	mb := &mockProvider{name: catalog.ProviderMusicBrainz, tracks: []catalog.Track{{ID: "mb:1", Provider: catalog.ProviderMusicBrainz, Title: "Kesariya Live"}}}
+	fed := NewFederatedSearch([]providers.Provider{sp, dz, mb}, 5*time.Second)
+
+	main, _ := fed.SearchTracksFast(context.Background(), "Kesariya", 10)
+	if len(main) != 1 || main[0].Provider != catalog.ProviderSpotify {
+		t.Fatalf("main search should come from Spotify only, got %+v", main)
+	}
+	deep, _ := fed.SearchTracks(context.Background(), "Kesariya", 10)
+	if len(deep) < 2 || deep[0].ProviderMeta["sources"] != "sp,dz" {
+		t.Fatalf("deep search should ask every provider, got %+v", deep)
+	}
+
+	// Spotify failing falls back to the fast zero-key providers.
+	sp.tracks, sp.err = nil, errors.New("401")
+	main, _ = fed.SearchTracksFast(context.Background(), "Kesariya", 10)
+	if len(main) != 1 || main[0].Provider != catalog.ProviderDeezer {
+		t.Fatalf("fallback should use Deezer, got %+v", main)
+	}
+}

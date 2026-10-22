@@ -1,13 +1,16 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"swar/internal/auth"
 	"swar/internal/catalog"
+	"swar/internal/providers/deepsearch"
 	"swar/internal/search"
 )
 
@@ -84,7 +87,7 @@ func (s *Server) handleDeepSearch(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, r, err)
 		return
 	}
-	res, err := s.deep.Search(r.Context(), req.Query, req.Limit)
+	res, err := s.deepSearchAll(r.Context(), req.Query, req.Limit)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
@@ -95,8 +98,58 @@ func (s *Server) handleDeepSearch(w http.ResponseWriter, r *http.Request) {
 	ok(w, map[string]any{
 		"query":   req.Query,
 		"results": res,
-		"notice":  "Deep Search finds metadata only. Playback and downloads depend on the source and on this server's settings.",
+		"notice":  "Deep Search looks on YouTube and in every music catalog that main search skips.",
 	})
+}
+
+// deepSearchAll runs the YouTube search and the catalog sources main search
+// leaves out (Deezer, iTunes, MusicBrainz when Spotify is on) side by side.
+// YouTube results come first; either half failing still returns the other.
+func (s *Server) deepSearchAll(ctx context.Context, query string, limit int) ([]deepsearch.Candidate, error) {
+	var (
+		wg            sync.WaitGroup
+		yt            []deepsearch.Candidate
+		ytErr         error
+		catalogTracks []catalog.Track
+		catalogErr    error
+	)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		yt, ytErr = s.deep.Search(ctx, query, limit)
+	}()
+	if q, err := catalog.NormalizeQuery(query); err == nil {
+		if _, videoID, _ := deepsearch.ParseInput(q); videoID == "" {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				catalogTracks, catalogErr = s.cat.SearchSongsDeep(ctx, q, 15)
+			}()
+		}
+	}
+	wg.Wait()
+	out := yt
+	seen := map[string]bool{}
+	for _, c := range yt {
+		seen[strings.ToLower(c.Title)] = true
+	}
+	for _, t := range catalogTracks {
+		key := strings.ToLower(t.Title)
+		if seen[key] {
+			continue // the same title is already listed
+		}
+		seen[key] = true
+		out = append(out, deepsearch.Candidate{Track: t, Source: t.Provider, Confidence: "metadata_only"})
+	}
+	if len(out) == 0 {
+		if ytErr != nil {
+			return nil, ytErr
+		}
+		if catalogErr != nil {
+			return nil, catalogErr
+		}
+	}
+	return out, nil
 }
 
 func (s *Server) handleTracks(w http.ResponseWriter, r *http.Request) {

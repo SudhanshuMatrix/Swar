@@ -155,12 +155,13 @@ func (s *Service) Search(ctx context.Context, rawQuery string, typ Type, page, l
 // could not be fetched are kept after the counted ones, so a slow upstream
 // never empties the list. Only the artists-only search pays for this.
 func (s *Service) rankArtistsBySongs(ctx context.Context, in []catalog.ArtistRef) []catalog.ArtistRef {
-	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	// Kept short: singers show without counts rather than slow search down.
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	out := make([]catalog.ArtistRef, len(in))
 	copy(out, in)
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 4)
+	sem := make(chan struct{}, 8)
 	for i := range out {
 		wg.Add(1)
 		go func(a *catalog.ArtistRef) {

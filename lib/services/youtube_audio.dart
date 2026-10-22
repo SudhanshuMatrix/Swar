@@ -44,6 +44,51 @@ class YouTubeAudio {
     return url.toString();
   }
 
+  static final _matches = <String, String>{};
+
+  /// Finds the YouTube video for a catalog song (Spotify, Deezer...) by
+  /// searching YouTube from this device. Prefers a video whose length
+  /// matches the song and skips live, cover and remix uploads unless the
+  /// song itself is one. Returns null when nothing fits.
+  static Future<String?> findVideoId(String title, String artist, Duration duration) async {
+    final key = '${title.toLowerCase()}|${artist.toLowerCase()}';
+    final known = _matches[key];
+    if (known != null) return known;
+    final yt = _yt ??= YoutubeExplode();
+    final results = await yt.search.search('$title $artist audio').timeout(const Duration(seconds: 15));
+    final wanted = title.toLowerCase();
+    const variants = ['live', 'cover', 'remix', 'karaoke', 'instrumental', 'lofi', 'lo-fi', 'slowed', 'reverb', '8d'];
+    String? best;
+    var bestScore = -1 << 30;
+    var rank = 0;
+    for (final v in results.take(10)) {
+      final name = v.title.toLowerCase();
+      var score = -rank * 2;
+      rank++;
+      if (name.contains(wanted)) score += 30;
+      if (artist.isNotEmpty &&
+          (name.contains(artist.toLowerCase()) || v.author.toLowerCase().contains(artist.toLowerCase()))) {
+        score += 15;
+      }
+      if (v.author.endsWith(' - Topic')) score += 10;
+      for (final word in variants) {
+        if (name.contains(word) && !wanted.contains(word)) score -= 40;
+      }
+      final d = v.duration;
+      if (d != null && duration > Duration.zero) {
+        final off = (d - duration).inSeconds.abs();
+        score += off <= 5 ? 25 : (off <= 20 ? 10 : (off > 90 ? -50 : -10));
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = v.id.value;
+      }
+    }
+    if (best == null || bestScore < 0) return null;
+    _matches[key] = best;
+    return best;
+  }
+
   /// Drops a cached URL that failed to play, so the next try asks again.
   static void forget(String trackId) => _cache.remove(trackId.startsWith('yt:') ? trackId.substring(3) : trackId);
 

@@ -4,7 +4,7 @@
 
 The architecture adheres to "Do not bypass DRM, access controls, licensing, or source restrictions":
 
-- **OMMR Native Go Music Metadata Engine**: Replaced the obsolete unofficial JioSaavn scraper with a native Go music metadata engine inspired by OMMR (Open Music Metadata Resolver). Leverages legitimate zero-key public APIs (Deezer, Apple iTunes Search API, MusicBrainz) and optional authenticated Spotify Web API without bypassing DRM or authentication.
+- **Catalogs**: main search is JioSaavn (songs, singers, albums, playlists, full songs when `SAAVN_MEDIA_URLS_ENABLED` is on) with YouTube Music songs mixed in (`internal/providers/ytmusic`, its public web search; those songs play from YouTube on the listener's device). The OMMR-inspired engine (`internal/music`: Deezer, iTunes, MusicBrainz, optional Spotify) feeds Deep Search next to yt-dlp's YouTube results. Its songs carry only 30-second previews, so `/track/{id}` returns the matching YouTube video ID and the app plays the full song on the device.
 - **Deep Search** finds metadata only by default. Resolving its results to stream URLs (`DEEPSEARCH_PLAYBACK_ENABLED`) is a separate switch. yt-dlp formats that report DRM are skipped, and private or region-locked videos are reported as unavailable rather than worked around.
 
 The server never re-encodes or stores audio. For Deezer and Apple iTunes, authorized 30-second audio previews are available when configured. Deep Search audio (only when `DEEPSEARCH_PLAYBACK_ENABLED` is on) is relayed through the server for signed URLs.
@@ -16,7 +16,9 @@ cmd/server            wiring, graceful shutdown
 internal/config       env configuration with validation
 internal/catalog      provider-neutral models, typed errors, cached service
 internal/cache        bounded LRU + TTL with request coalescing
-internal/music        native music engine inspired by OMMR
+internal/music        Deep Search catalogs (OMMR-inspired engine)
+internal/providers/saavn    JioSaavn, the main catalog
+internal/providers/ytmusic  YouTube Music song search
 internal/music/providers   deezer, itunes, musicbrainz, spotify
 internal/music/normalize   unicode, Indian script preservation, variations, Jaro-Winkler, TokenSet
 internal/music/search      federated search, canonical deduplication, ranking

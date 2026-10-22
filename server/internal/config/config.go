@@ -35,6 +35,22 @@ type Config struct {
 	RateLimitBurst  int
 	CacheMaxEntries int
 
+	// JioSaavn is the main catalog: search, singers, albums, playlists and
+	// full songs.
+	SaavnBaseURL        string
+	SaavnTimeout        time.Duration
+	SaavnMaxConcurrency int
+	SaavnMaxRetries     int
+	SaavnMaxBodyBytes   int64
+	// SaavnMediaURLs turns on resolving Saavn's encrypted media references
+	// into stream URLs. Off by default: see docs/DECISIONS.md.
+	SaavnMediaURLs bool
+	// SaavnDownloads asserts that the operator holds rights that permit
+	// client-side offline copies of Saavn audio. Off by default.
+	SaavnDownloads bool
+	// YTMusicSearch adds YouTube Music song results to main search.
+	YTMusicSearch bool
+
 	MusicProviderDeezerEnabled      bool
 	MusicProviderITunesEnabled      bool
 	MusicProviderMusicBrainzEnabled bool
@@ -105,6 +121,15 @@ func LoadFrom(getenv func(string) string) (*Config, error) {
 		RateLimitRPS:    e.float("SWAR_RATE_LIMIT_RPS", 10),
 		RateLimitBurst:  e.int("SWAR_RATE_LIMIT_BURST", 40),
 		CacheMaxEntries: e.int("SWAR_CACHE_MAX_ENTRIES", 20000),
+
+		SaavnBaseURL:        e.str("SAAVN_BASE_URL", "https://www.jiosaavn.com/api.php"),
+		SaavnTimeout:        e.dur("SAAVN_TIMEOUT", 8*time.Second),
+		SaavnMaxConcurrency: e.int("SAAVN_MAX_CONCURRENCY", 8),
+		SaavnMaxRetries:     e.int("SAAVN_MAX_RETRIES", 2),
+		SaavnMaxBodyBytes:   e.int64("SAAVN_MAX_BODY_BYTES", 4<<20),
+		SaavnMediaURLs:      e.bool("SAAVN_MEDIA_URLS_ENABLED", false),
+		SaavnDownloads:      e.bool("SAAVN_DOWNLOADS_ENABLED", false),
+		YTMusicSearch:       e.bool("YTMUSIC_SEARCH_ENABLED", true),
 
 		MusicProviderDeezerEnabled:      e.bool("MUSIC_PROVIDER_DEEZER_ENABLED", true),
 		MusicProviderITunesEnabled:      e.bool("MUSIC_PROVIDER_ITUNES_ENABLED", true),
@@ -177,6 +202,9 @@ func (c *Config) validate() error {
 	check(c.MaxBodyBytes > 0 && c.MaxBodyBytes <= 10<<20, "SWAR_MAX_BODY_BYTES must be between 1 and 10MiB")
 	check(c.RateLimitRPS > 0 && c.RateLimitBurst > 0, "rate limit values must be positive")
 	check(c.CacheMaxEntries >= 100, "SWAR_CACHE_MAX_ENTRIES must be at least 100")
+	check(c.SaavnMaxConcurrency >= 1 && c.SaavnMaxConcurrency <= 64, "SAAVN_MAX_CONCURRENCY must be 1-64")
+	check(c.SaavnMaxRetries >= 0 && c.SaavnMaxRetries <= 5, "SAAVN_MAX_RETRIES must be 0-5")
+	check(strings.HasPrefix(c.SaavnBaseURL, "https://") || !c.IsProduction(), "SAAVN_BASE_URL must use https in production")
 	check(c.MusicMaxConcurrency >= 1 && c.MusicMaxConcurrency <= 64, "MUSIC_MAX_CONCURRENCY must be 1-64")
 	check(c.DeepSearchMaxResults >= 1 && c.DeepSearchMaxResults <= 25, "DEEPSEARCH_MAX_RESULTS must be 1-25")
 	check(c.DeepSearchConcurrency >= 1 && c.DeepSearchConcurrency <= 8, "DEEPSEARCH_CONCURRENCY must be 1-8")
