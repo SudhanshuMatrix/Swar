@@ -193,35 +193,78 @@ class ServerPopupDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
     final url = Uri.tryParse(popup.buttonUrl);
     final hasLink = popup.buttonUrl.isNotEmpty && url != null;
+    const buttonShape = StadiumBorder();
+    const buttonSize = Size.fromHeight(48);
     return PopScope(
       canPop: popup.dismissible,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) AppStatus.dismiss(popupKey);
       },
-      child: AlertDialog(
-        icon: Container(
-          padding: const EdgeInsets.all(Gaps.md),
-          decoration: const BoxDecoration(shape: BoxShape.circle, gradient: SonivoColors.brandGradient),
-          child: Icon(_icon, color: Colors.white),
+      child: Dialog(
+        backgroundColor: SonivoColors.surfaceHigh,
+        insetPadding: const EdgeInsets.symmetric(horizontal: Gaps.xl, vertical: Gaps.xxl),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Gaps.radiusLg),
+          side: const BorderSide(color: SonivoColors.outline),
         ),
-        title: Text(popup.title),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 460, maxHeight: 320),
-          child: SingleChildScrollView(child: Text(popup.message, style: Theme.of(context).textTheme.bodyMedium)),
-        ),
-        actions: [
-          if (popup.dismissible) TextButton(onPressed: () => _close(context), child: Text(hasLink ? 'Not now' : 'OK')),
-          if (hasLink)
-            FilledButton(
-              onPressed: () {
-                launchUrl(url, mode: LaunchMode.externalApplication);
-                if (popup.dismissible) _close(context);
-              },
-              child: Text(popup.buttonText.isNotEmpty ? popup.buttonText : 'Open'),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(Gaps.xl, Gaps.xxl, Gaps.xl, Gaps.xl),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 64,
+                    height: 64,
+                    decoration: const BoxDecoration(shape: BoxShape.circle, gradient: SonivoColors.brandGradient),
+                    child: Icon(_icon, color: Colors.white, size: 30),
+                  ),
+                ),
+                const SizedBox(height: Gaps.lg),
+                Text(popup.title, style: text.titleLarge, textAlign: TextAlign.center),
+                const SizedBox(height: Gaps.sm),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Text(
+                      popup.message,
+                      style: text.bodyMedium?.copyWith(color: SonivoColors.textSecondary, height: 1.45),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+                if (hasLink || popup.dismissible) const SizedBox(height: Gaps.xl),
+                if (hasLink)
+                  FilledButton(
+                    style: FilledButton.styleFrom(minimumSize: buttonSize, shape: buttonShape),
+                    onPressed: () {
+                      launchUrl(url, mode: LaunchMode.externalApplication);
+                      if (popup.dismissible) _close(context);
+                    },
+                    child: Text(popup.buttonText.isNotEmpty ? popup.buttonText : 'Open'),
+                  ),
+                if (hasLink && popup.dismissible) const SizedBox(height: Gaps.sm),
+                if (popup.dismissible && hasLink)
+                  TextButton(
+                    style: TextButton.styleFrom(minimumSize: buttonSize, shape: buttonShape),
+                    onPressed: () => _close(context),
+                    child: const Text('Not now'),
+                  ),
+                if (popup.dismissible && !hasLink)
+                  FilledButton(
+                    style: FilledButton.styleFrom(minimumSize: buttonSize, shape: buttonShape),
+                    onPressed: () => _close(context),
+                    child: const Text('OK'),
+                  ),
+              ],
             ),
-        ],
+          ),
+        ),
       ),
     );
   }

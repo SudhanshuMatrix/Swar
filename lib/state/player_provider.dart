@@ -10,6 +10,7 @@ import '../services/audio_handler.dart';
 import '../services/download_service.dart';
 import '../services/jam_service.dart';
 import '../services/library_service.dart';
+import '../services/youtube_audio.dart';
 
 enum PlaybackRepeatMode { off, all, one }
 
@@ -319,6 +320,8 @@ class PlayerProvider extends ChangeNotifier {
       final start = startAt > Duration.zero ? startAt : null;
       if (local != null) {
         await audioHandler.loadUrl(Uri.file(local).toString(), _mediaItem(track), startAt: start);
+      } else if (track.isDeepSearchResult && YouTubeAudio.supported) {
+        streamUrl = await _loadFromYouTube(track, start);
       } else {
         final stream = await api.resolveAudio(track.id);
         streamUrl = stream.url;
@@ -344,6 +347,32 @@ class PlayerProvider extends ChangeNotifier {
     } finally {
       _loading = false;
       notifyListeners();
+    }
+  }
+
+  /// Plays a Deep Search song from YouTube on this device. If YouTube won't
+  /// give it to this device, the server's relay gets one try; when that
+  /// fails too, the device's reason is the one worth showing. Returns the
+  /// relay URL when the relay was used.
+  Future<String?> _loadFromYouTube(Track track, Duration? start) async {
+    Object deviceError;
+    try {
+      final url = await YouTubeAudio.streamUrl(track.id);
+      await audioHandler.loadUrl(url, _mediaItem(track), startAt: start);
+      return null;
+    } catch (err) {
+      debugPrint('Swar: YouTube on this device failed for ${track.id}: $err');
+      YouTubeAudio.forget(track.id);
+      deviceError = err;
+    }
+    try {
+      final stream = await api.resolveAudio(track.id);
+      await audioHandler.loadUrl(stream.url, _mediaItem(stream.track), startAt: start);
+      return stream.url;
+    } catch (_) {
+      throw deviceError is YouTubeAudioException
+          ? deviceError
+          : const YouTubeAudioException("Couldn't get this song from YouTube. Check your connection and try again.");
     }
   }
 

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'app_icons.dart';
 import '../services/api_service.dart';
+import '../services/youtube_audio.dart';
 import '../state/app_status.dart';
 import 'theme.dart';
 
@@ -21,6 +22,7 @@ class InputError implements Exception {
 /// stack traces or raw exception text.
 String friendlyError(Object error) {
   if (error is InputError) return error.message;
+  if (error is YouTubeAudioException) return error.message;
   if (error is ApiException) {
     switch (error.code) {
       case 'maintenance':

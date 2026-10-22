@@ -12,6 +12,13 @@ release notes.
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-10-22
+
+### Changed
+
+- Deep Search songs now play straight from YouTube on your device: the app asks YouTube for the video's sound only and plays it with the normal player controls, lock screen and notification. The server no longer has to fetch the song, so YouTube blocking the server stops these songs failing. The server relay is still tried if YouTube refuses the device, and the web version still uses the server.
+- Server popups are redesigned: everything is centered, and the buttons are full width and stacked, including when a popup can't be closed.
+
 ## [1.2.4] - 2026-10-22
 
 ### Added

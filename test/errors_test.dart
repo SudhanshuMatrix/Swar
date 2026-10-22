@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:sonivo/core/errors.dart';
 import 'package:sonivo/services/api_service.dart';
+import 'package:sonivo/services/youtube_audio.dart';
 
 void main() {
   test('network failures read as a connection problem', () {
@@ -38,5 +39,10 @@ void main() {
   test('a YouTube block on the server is named, not blamed on the song', () {
     expect(friendlyError(ApiException(503, 'rate_limited', 'YouTube is blocking requests from this server right now')),
         startsWith('YouTube is blocking'));
+  });
+
+  test('a song YouTube refused on this device shows the reason as is', () {
+    expect(
+        friendlyError(const YouTubeAudioException('This YouTube video is private.')), 'This YouTube video is private.');
   });
 }
