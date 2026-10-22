@@ -82,6 +82,15 @@ class JamController extends ChangeNotifier {
     return Duration(milliseconds: ms);
   }
 
+  /// How long until a scheduled start: the server sets playback to begin a
+  /// moment ahead so every device starts the song together.
+  Duration get startsIn {
+    if (!playing) return Duration.zero;
+    final serverNow = DateTime.now().millisecondsSinceEpoch + _clockOffsetMs;
+    final ms = _anchorServerMs - serverNow;
+    return ms > 0 ? Duration(milliseconds: ms) : Duration.zero;
+  }
+
   Future<void> create(String displayName) async {
     final snap = await api.createJam(displayName);
     _start(snap);
@@ -125,7 +134,10 @@ class JamController extends ChangeNotifier {
   }
 
   void allowRejoin(String participantId) => send({'type': 'allow_rejoin', 'participantId': participantId});
-  void addTrack(Track t) => send({'type': 'queue_add', 'trackIds': [t.id]});
+  void addTrack(Track t) => send({
+        'type': 'queue_add',
+        'trackIds': [t.id]
+      });
   void playPause() => send({'type': playing ? 'pause' : 'play', 'rev': rev});
   void next() => send({'type': 'next', 'rev': rev});
   void previous() => send({'type': 'previous', 'rev': rev});
@@ -280,11 +292,13 @@ class JamController extends ChangeNotifier {
     final entry = pb['entryId'] as String?;
     final wasPlaying = playing;
     final prevEntry = nowPlayingEntryId;
+    final before = position;
     nowPlayingEntryId = entry;
     playing = pb['playing'] == true;
     _positionMs = (pb['positionMs'] as num?)?.toInt() ?? 0;
     _anchorServerMs = (pb['updatedAt'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch + _clockOffsetMs;
-    if (entry != prevEntry || playing != wasPlaying) {
+    // Seeks count too, so everyone jumps to the same place.
+    if (entry != prevEntry || playing != wasPlaying || (position - before).abs() > const Duration(seconds: 1)) {
       onPlaybackChanged?.call(this);
     }
   }

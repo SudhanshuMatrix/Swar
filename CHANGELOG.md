@@ -12,6 +12,25 @@ release notes.
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-10-22
+
+### Added
+
+- Maintenance mode: when the server is switched into maintenance, the app shows a maintenance screen with the server's message, pauses playback, and opens again by itself when maintenance ends.
+- Server popups: the server can show one announcement at a time, such as "update the app" or "support us", with an optional button that opens a link. A popup that was closed stays closed until a different one is turned on or it is edited.
+- Admin API on the server (`/v1/admin`, protected by `ADMIN_USERNAME` and `ADMIN_PASSWORD`) to turn maintenance on or off and to create, list, edit, delete, activate and deactivate popups. Every server response now carries `X-Swar-Maintenance` and `X-Swar-Popup` headers, and `GET /v1/status` returns the details.
+
+## [1.2.3] - 2026-10-21
+
+### Added
+
+- Search suggestions while you type: matching singers, songs and your recent searches. Tap a song to play it, or a singer to open their page.
+
+### Changed
+
+- Faster search: songs show as soon as they arrive and singers and playlists fill in after, and going back to a recent search is instant.
+- Jam: when someone presses play or a new song starts, every device waits for the same moment and starts together, instead of each one starting whenever it finished loading. Seeking moves everyone too.
+
 ## [1.2.2] - 2026-10-21
 
 ### Changed

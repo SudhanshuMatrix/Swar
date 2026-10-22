@@ -420,21 +420,46 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   /// Follows the Jam's shared track and play state.
+  int _jamSync = 0;
+
+  /// Follows the Jam's shared playback. A new song is loaded without
+  /// starting, then every device starts it at the moment the server picked,
+  /// so phones that load slower don't fall behind.
   Future<void> syncToJam(JamController j) async {
+    final sync = ++_jamSync;
     final shared = j.nowPlaying;
     if (shared == null) {
       if (_playing) await audioHandler.pause();
       return;
     }
     if (currentTrack?.id != shared.id) {
-      await playQueue([shared], 0);
+      _radioStationId = null;
+      _radioLabel = null;
+      _queue = [shared];
+      _queueIndex = 0;
+      await _loadCurrent(autoplay: false);
+      if (sync != _jamSync) return; // a newer update took over
     }
-    final drift = (j.position - _position).abs();
-    if (drift > const Duration(seconds: 2)) {
+    Duration drift() => (j.position - audioHandler.player.position).abs();
+    if (!j.playing) {
+      if (_playing) await audioHandler.pause();
+      if (drift() > const Duration(milliseconds: 500)) await seek(j.position);
+      return;
+    }
+    final wait = j.startsIn;
+    if (wait > Duration.zero) {
+      if (_playing) await audioHandler.pause();
       await seek(j.position);
+      await Future<void>.delayed(j.startsIn);
+      if (sync != _jamSync) return;
+      await audioHandler.play();
+      return;
     }
-    if (j.playing && !_playing) await audioHandler.play();
-    if (!j.playing && _playing) await audioHandler.pause();
+    if (drift() > const Duration(milliseconds: 400)) await seek(j.position);
+    if (!_playing) await audioHandler.play();
+    // Joining late or loading slowly: check once more after buffering.
+    await Future<void>.delayed(const Duration(seconds: 2));
+    if (sync == _jamSync && j.playing && drift() > const Duration(milliseconds: 400)) await seek(j.position);
   }
 
   Future<void> next() async {

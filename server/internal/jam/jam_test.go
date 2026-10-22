@@ -201,16 +201,21 @@ func TestPlaybackStateAnchoredToServerTime(t *testing.T) {
 	if snap.NowPlaying.TrackID != "saavn:a" || snap.NowPlaying.Playing {
 		t.Fatalf("now playing: %+v", snap.NowPlaying)
 	}
-	m.Execute(ctx, "dev_h", h.ID, cmd("play"))
+	// Play is scheduled a moment ahead so every device starts together.
+	playAt := c.now().UnixMilli() + resumeLeadMs
+	snap, _ = m.Execute(ctx, "dev_h", h.ID, cmd("play"))
+	if snap.NowPlaying.UpdatedAt != playAt || snap.NowPlaying.PositionMs != 0 {
+		t.Fatalf("play not scheduled ahead: %+v", snap.NowPlaying)
+	}
 	c.add(10 * time.Second)
 	m.Join("dev_late", h.Code, "Late")
 	late, _ := m.Get("dev_late", h.ID)
-	if late.NowPlaying.PositionMs != 10_000 {
+	if late.NowPlaying.PositionMs != 10_000-resumeLeadMs {
 		t.Fatalf("late joiner position = %d", late.NowPlaying.PositionMs)
 	}
 	snap, _ = m.Execute(ctx, "dev_h", h.ID, cmd("pause"))
 	c.add(5 * time.Second)
-	if got, _ := m.Get("dev_h", h.ID); got.NowPlaying.PositionMs != 10_000 || got.NowPlaying.Playing {
+	if got, _ := m.Get("dev_h", h.ID); got.NowPlaying.PositionMs != 10_000-resumeLeadMs || got.NowPlaying.Playing {
 		t.Fatalf("paused position drifted: %+v", got.NowPlaying)
 	}
 	pos := int64(42_000)
@@ -407,4 +412,22 @@ func TestQueueLimitAndVotes(t *testing.T) {
 	}
 	_, err = m.Execute(ctx, "dev_h", h.ID, Command{Type: "queue_add", TrackIDs: []string{"saavn:d", "saavn:e", "saavn:f"}})
 	wantErr(t, err, ErrQueueFull)
+}
+
+func TestNextSongStartsTogetherAfterALead(t *testing.T) {
+	m, c := newManager(t)
+	ctx := context.Background()
+	h, _ := m.Create("dev_h", "", "H", Settings{})
+	m.Execute(ctx, "dev_h", h.ID, Command{Type: "queue_add", TrackIDs: []string{"saavn:a", "saavn:b"}})
+	m.Execute(ctx, "dev_h", h.ID, cmd("play"))
+	c.add(30 * time.Second)
+	startAt := c.now().UnixMilli() + trackLeadMs
+	snap, _ := m.Execute(ctx, "dev_h", h.ID, cmd("next"))
+	if snap.NowPlaying.TrackID != "saavn:b" || snap.NowPlaying.UpdatedAt != startAt || snap.NowPlaying.PositionMs != 0 {
+		t.Fatalf("next song not scheduled ahead: %+v", snap.NowPlaying)
+	}
+	c.add(time.Second) // still waiting for the shared start
+	if got, _ := m.Get("dev_h", h.ID); got.NowPlaying.PositionMs != 0 || got.NowPlaying.UpdatedAt != startAt {
+		t.Fatalf("waiting position = %+v", got.NowPlaying)
+	}
 }

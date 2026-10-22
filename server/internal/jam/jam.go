@@ -468,6 +468,14 @@ func (m *Manager) Execute(ctx context.Context, device, id string, cmd Command) (
 	return s.snapshot(device, now), nil
 }
 
+// Playback that starts or resumes is scheduled a moment ahead, so every
+// device can load the song first and all of them start together on the
+// shared clock instead of each one as soon as it happens to be ready.
+const (
+	resumeLeadMs = 500
+	trackLeadMs  = 1500
+)
+
 func (m *Manager) apply(s *Session, p *Participant, cmd Command, newTracks []catalog.Track, now time.Time) error {
 	nowMs := now.UnixMilli()
 	q := s.queue
@@ -477,7 +485,7 @@ func (m *Manager) apply(s *Session, p *Participant, cmd Command, newTracks []cat
 			return badCommand("the queue is empty")
 		}
 		if !s.pb.Playing {
-			s.pb.Playing, s.pb.UpdatedAt = true, nowMs
+			s.pb.Playing, s.pb.UpdatedAt = true, nowMs+resumeLeadMs
 		}
 	case "pause":
 		if s.pb.Playing {
@@ -651,6 +659,19 @@ func (s *Session) setCurrent(nowMs int64) {
 		return
 	}
 	s.pb.EntryID, s.pb.TrackID, s.pb.PositionMs, s.pb.UpdatedAt = e.EntryID, e.TrackID, 0, nowMs
+	if s.pb.Playing {
+		s.pb.UpdatedAt += trackLeadMs
+	}
+}
+
+// anchor is the playback position and the server time it applies to, as
+// sent to clients. A start scheduled ahead keeps its future time, so every
+// device waits for the same moment.
+func (s *Session) anchor(nowMs int64) (positionMs, atMs int64) {
+	if s.pb.Playing && s.pb.UpdatedAt > nowMs {
+		return s.pb.PositionMs, s.pb.UpdatedAt
+	}
+	return s.livePosition(nowMs), nowMs
 }
 
 func (s *Session) livePosition(nowMs int64) int64 {

@@ -63,6 +63,7 @@ type Server struct {
 	tokens   *auth.Tokens
 	limiter  *rateLimiter
 	devCache *cache.Cache
+	status   statusCache
 	handler  http.Handler
 	ready    func(context.Context) error
 }
@@ -76,9 +77,12 @@ func New(d Deps) *Server {
 		devCache: cache.New(10000),
 	}
 	s.ready = func(ctx context.Context) error { return s.store.Ping(ctx) }
+	if err := s.reloadStatus(context.Background()); err != nil {
+		s.log.Error("load maintenance and popup state", "err", err)
+	}
 	mux := http.NewServeMux()
 	s.routes(mux)
-	s.handler = s.base(s.compress(s.cors(s.rateLimit(s.limits(s.authenticate(mux))))))
+	s.handler = s.base(s.compress(s.cors(s.appState(s.rateLimit(s.limits(s.authenticate(mux)))))))
 	return s
 }
 
@@ -89,6 +93,19 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /readyz", s.handleReadyz)
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
+
+	// App status (maintenance, popup) and its admin API.
+	mux.HandleFunc("GET /v1/status", s.handleStatus)
+	mux.HandleFunc("GET /v1/admin/maintenance", s.requireAdmin(s.handleAdminGetMaintenance))
+	mux.HandleFunc("PUT /v1/admin/maintenance", s.requireAdmin(s.handleAdminSetMaintenance))
+	mux.HandleFunc("GET /v1/admin/popups", s.requireAdmin(s.handleAdminListPopups))
+	mux.HandleFunc("POST /v1/admin/popups", s.requireAdmin(s.handleAdminCreatePopup))
+	mux.HandleFunc("GET /v1/admin/popups/active", s.requireAdmin(s.handleAdminGetActivePopup))
+	mux.HandleFunc("PUT /v1/admin/popups/active", s.requireAdmin(s.handleAdminActivatePopup))
+	mux.HandleFunc("DELETE /v1/admin/popups/active", s.requireAdmin(s.handleAdminDeactivatePopup))
+	mux.HandleFunc("GET /v1/admin/popups/{id}", s.requireAdmin(s.handleAdminGetPopup))
+	mux.HandleFunc("PUT /v1/admin/popups/{id}", s.requireAdmin(s.handleAdminUpdatePopup))
+	mux.HandleFunc("DELETE /v1/admin/popups/{id}", s.requireAdmin(s.handleAdminDeletePopup))
 
 	// Device identity.
 	mux.HandleFunc("POST /v1/auth/device", s.handleRegisterDevice)

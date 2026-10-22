@@ -105,6 +105,7 @@ func (s *Server) cors(next http.Handler) http.Handler {
 			}
 			h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			h.Set("Access-Control-Expose-Headers", "X-Swar-Maintenance, X-Swar-Popup")
 			h.Set("Access-Control-Max-Age", "600")
 		}
 		if r.Method == http.MethodOptions {

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'app_icons.dart';
 import '../services/api_service.dart';
+import '../state/app_status.dart';
 import 'theme.dart';
 
 /// A mistake in what the user typed; its message is shown as is.
@@ -22,9 +23,12 @@ String friendlyError(Object error) {
   if (error is InputError) return error.message;
   if (error is ApiException) {
     switch (error.code) {
+      case 'maintenance':
+        return error.message.isNotEmpty ? error.message : 'Swar is down for maintenance. Please check back soon.';
       case 'rate_limited':
-        if (error.message.contains('YouTube'))
+        if (error.message.contains('YouTube')) {
           return '${error.message}. Deep Search songs will play again once it stops.';
+        }
         return 'Too many requests right now. Wait a few seconds and try again.';
       case 'not_found':
         return 'That song or playlist could not be found. It may have been removed.';
@@ -75,7 +79,8 @@ class ErrorPopup {
   static Future<void> show(Object error, {String title = 'Something went wrong', VoidCallback? onRetry}) async {
     debugPrint('Swar error: $error');
     final context = navigatorKey.currentContext;
-    if (context == null || _open) return;
+    // The maintenance screen already explains why requests fail.
+    if (context == null || _open || AppStatus.instance.maintenance) return;
     _open = true;
     try {
       await showDialog<void>(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -40,6 +42,23 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _searched = false;
   String? _error;
 
+  /// What the results on screen are for; suggestions show while the text
+  /// differs from it.
+  String _searchedFor = '';
+  int _searchId = 0;
+  int _suggestId = 0;
+  Timer? _debounce;
+  List<Track> _suggestSongs = [];
+  List<OnlineArtist> _suggestArtists = [];
+
+  bool get _showSuggestions {
+    final q = _controller.text.trim();
+    return q.isNotEmpty && q != _searchedFor;
+  }
+
+  /// Recent results, so going back to a search is instant.
+  static final _cache = <String, ({List<Track> songs, List<OnlinePlaylist> playlists, List<OnlineArtist> artists})>{};
+
   @override
   void initState() {
     super.initState();
@@ -58,48 +77,162 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void dispose() {
     SearchScreen.requests.removeListener(_onRequest);
+    _debounce?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
   Future<void> _search(String query) async {
     final trimmed = query.trim();
+    _debounce?.cancel();
+    final id = ++_searchId;
     if (trimmed.isEmpty) {
       setState(() {
         _results = [];
         _playlists = [];
         _artists = [];
+        _searchedFor = '';
+      });
+      return;
+    }
+    context.read<LibraryProvider>().addSearch(trimmed);
+    final key = trimmed.toLowerCase();
+    final cached = _cache.remove(key);
+    if (cached != null) {
+      _cache[key] = cached;
+      setState(() {
+        _results = cached.songs;
+        _playlists = cached.playlists;
+        _artists = cached.artists;
+        _searched = true;
+        _searchedFor = trimmed;
+        _loading = false;
+        _error = null;
       });
       return;
     }
     setState(() {
       _loading = true;
       _error = null;
+      _searchedFor = trimmed;
+      _results = [];
+      _playlists = [];
+      _artists = [];
+    });
+    final api = context.read<ApiService>();
+    // Songs show as soon as they arrive; singers and playlists fill in when
+    // they're ready. They're a bonus: if those searches fail, songs still show.
+    final playlistsFuture = api.searchPlaylists(trimmed).catchError((_) => <OnlinePlaylist>[]);
+    final artistsFuture = api.searchArtists(trimmed, limit: 8).catchError((_) => <OnlineArtist>[]);
+    playlistsFuture.then((p) {
+      if (mounted && id == _searchId) setState(() => _playlists = p);
+    });
+    artistsFuture.then((a) {
+      if (mounted && id == _searchId) setState(() => _artists = a);
     });
     try {
-      final api = context.read<ApiService>();
-      // Singers and playlists are a bonus: if those searches fail, songs
-      // still show.
-      final playlistsFuture = api.searchPlaylists(trimmed).catchError((_) => <OnlinePlaylist>[]);
-      final artistsFuture = api.searchArtists(trimmed, limit: 8).catchError((_) => <OnlineArtist>[]);
-      context.read<LibraryProvider>().addSearch(trimmed);
       final results = await api.search(trimmed);
-      final playlists = await playlistsFuture;
-      final artists = await artistsFuture;
-      if (!mounted) return;
+      if (!mounted || id != _searchId) return;
       setState(() {
         _results = results;
-        _playlists = playlists;
-        _artists = artists;
         _searched = true;
+        _loading = false;
       });
+      _cache[key] = (songs: results, playlists: await playlistsFuture, artists: await artistsFuture);
+      if (_cache.length > 30) _cache.remove(_cache.keys.first);
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || id != _searchId) return;
       setState(() => _error = friendlyError(e));
       ErrorPopup.show(e, title: 'Search failed', onRetry: () => _search(trimmed));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && id == _searchId) setState(() => _loading = false);
     }
+  }
+
+  void _onTextChanged(String text) {
+    _debounce?.cancel();
+    final q = text.trim();
+    if (q.length >= 2) {
+      // Wait for a pause in typing so each keystroke isn't a request.
+      _debounce = Timer(const Duration(milliseconds: 250), () => _loadSuggestions(q));
+    }
+    if (text.isEmpty && (_results.isNotEmpty || _hasExtras)) {
+      setState(() {
+        _results = [];
+        _playlists = [];
+        _artists = [];
+        _searchedFor = '';
+      });
+    } else {
+      // Keeps the clear button and suggestions in step with the text.
+      setState(() {});
+    }
+  }
+
+  Future<void> _loadSuggestions(String q) async {
+    final id = ++_suggestId;
+    try {
+      final s = await context.read<ApiService>().suggest(q);
+      if (!mounted || id != _suggestId) return;
+      setState(() {
+        _suggestSongs = s.songs;
+        _suggestArtists = s.artists;
+      });
+    } catch (_) {
+      // Suggestions are optional; the full search still works.
+    }
+  }
+
+  Widget _buildSuggestions(double side) {
+    final q = _controller.text.trim();
+    final lower = q.toLowerCase();
+    final player = context.read<PlayerProvider>();
+    final recent = context
+        .watch<LibraryProvider>()
+        .searches
+        .where((s) => s.toLowerCase() != lower && s.toLowerCase().contains(lower))
+        .take(3);
+    final pad = EdgeInsets.symmetric(horizontal: side);
+    return ListView(
+      padding: const EdgeInsets.only(bottom: Gaps.xl),
+      children: [
+        ListTile(
+          contentPadding: pad,
+          leading: const Icon(PhosphorIconsRegular.magnifyingGlass),
+          title: Text('Search for "$q"', maxLines: 1, overflow: TextOverflow.ellipsis),
+          onTap: () => _search(q),
+        ),
+        for (final r in recent)
+          ListTile(
+            contentPadding: pad,
+            leading: const Icon(PhosphorIconsRegular.clockCounterClockwise),
+            title: Text(r, maxLines: 1, overflow: TextOverflow.ellipsis),
+            onTap: () {
+              _controller.text = r;
+              _search(r);
+            },
+          ),
+        for (final a in _suggestArtists.take(2))
+          ListTile(
+            contentPadding: pad,
+            leading: Artwork(url: a.imageUrl, size: 40, circle: true, icon: PhosphorIconsRegular.user),
+            title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: const Text('Singer'),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ArtistScreen(artist: a))),
+          ),
+        for (final t in _suggestSongs.take(5))
+          ListTile(
+            contentPadding: pad,
+            leading: Artwork(url: t.thumbnailUrl, size: 40),
+            title: Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Text(t.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+            onTap: () {
+              FocusScope.of(context).unfocus();
+              player.playQueue([t], 0);
+            },
+          ),
+      ],
+    );
   }
 
   void _openDeepSearch() {
@@ -144,7 +277,9 @@ class _SearchScreenState extends State<SearchScreen> {
                           icon: const Icon(PhosphorIconsRegular.x),
                           onPressed: () {
                             _controller.clear();
+                            _debounce?.cancel();
                             setState(() {
+                              _searchedFor = '';
                               _results = [];
                               _playlists = [];
                               _artists = [];
@@ -155,18 +290,7 @@ class _SearchScreenState extends State<SearchScreen> {
                         )
                       : null,
                 ),
-                onChanged: (text) {
-                  if (text.isEmpty && (_results.isNotEmpty || _hasExtras)) {
-                    setState(() {
-                      _results = [];
-                      _playlists = [];
-                      _artists = [];
-                    });
-                  } else {
-                    // Keeps the clear button in step with the text.
-                    setState(() {});
-                  }
-                },
+                onChanged: _onTextChanged,
               ),
             ),
             if (_loading)
@@ -190,39 +314,41 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 ),
               ),
-            if (_searched && _results.isEmpty && !_hasExtras && !_loading)
+            if (_searched && _results.isEmpty && !_hasExtras && !_loading && !_showSuggestions)
               Padding(
                 padding: EdgeInsets.fromLTRB(side, Gaps.sm, side, 0),
                 child: Text('No results for "${_controller.text.trim()}".',
                     style: const TextStyle(color: SonivoColors.textSecondary)),
               ),
-            if (_searched && !_loading) _DeepSearchPrompt(onTap: _openDeepSearch),
+            if (_searched && !_loading && !_showSuggestions) _DeepSearchPrompt(onTap: _openDeepSearch),
             Expanded(
-              child: _results.isEmpty && !_hasExtras && !_loading
-                  ? _buildBrowseGenres()
-                  : ListView.builder(
-                      padding: const EdgeInsets.only(bottom: Gaps.xl),
-                      itemCount: _results.length + (_hasExtras ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (_hasExtras && index == 0) {
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (_artists.isNotEmpty) _ArtistRow(artists: _artists),
-                              if (_playlists.isNotEmpty) _PlaylistRow(playlists: _playlists),
-                              if (_results.isNotEmpty) const SectionHeader('Songs'),
-                            ],
-                          );
-                        }
-                        final i = _hasExtras ? index - 1 : index;
-                        final t = _results[i];
-                        return TrackTile(
-                          track: t,
-                          onTap: () => player.playQueue(_results, i),
-                          trailing: TrackMenu(track: t),
-                        );
-                      },
-                    ),
+              child: _showSuggestions
+                  ? _buildSuggestions(side)
+                  : _results.isEmpty && !_hasExtras && !_loading
+                      ? _buildBrowseGenres()
+                      : ListView.builder(
+                          padding: const EdgeInsets.only(bottom: Gaps.xl),
+                          itemCount: _results.length + (_hasExtras ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            if (_hasExtras && index == 0) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (_artists.isNotEmpty) _ArtistRow(artists: _artists),
+                                  if (_playlists.isNotEmpty) _PlaylistRow(playlists: _playlists),
+                                  if (_results.isNotEmpty) const SectionHeader('Songs'),
+                                ],
+                              );
+                            }
+                            final i = _hasExtras ? index - 1 : index;
+                            final t = _results[i];
+                            return TrackTile(
+                              track: t,
+                              onTap: () => player.playQueue(_results, i),
+                              trailing: TrackMenu(track: t),
+                            );
+                          },
+                        ),
             ),
           ],
         ),

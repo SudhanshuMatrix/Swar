@@ -96,8 +96,7 @@ func (s *Session) snapshot(device string, now time.Time) *Snapshot {
 		}
 	}
 	// Report the live position so late joiners start in the right place.
-	snap.NowPlaying.PositionMs = s.livePosition(now.UnixMilli())
-	snap.NowPlaying.UpdatedAt = now.UnixMilli()
+	snap.NowPlaying.PositionMs, snap.NowPlaying.UpdatedAt = s.anchor(now.UnixMilli())
 	return snap
 }
 
@@ -235,7 +234,7 @@ func (m *Manager) SyncMessage(device, id string) ([]byte, error) {
 	}
 	now := m.now().UnixMilli()
 	pb := s.pb
-	pb.PositionMs, pb.UpdatedAt = s.livePosition(now), now
+	pb.PositionMs, pb.UpdatedAt = s.anchor(now)
 	return json.Marshal(map[string]any{"type": "sync", "rev": s.rev, "serverTime": now, "playback": pb})
 }
 

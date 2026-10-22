@@ -181,6 +181,44 @@ Both playback switches are off by default because turning them on is the
 operator's decision about streaming rights. Read
 [server/docs/DECISIONS.md](server/docs/DECISIONS.md) first.
 
+### Maintenance mode and popups
+
+Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` in the server's environment (on
+Render: the service's Environment tab). The admin API stays off until both are
+set. Every admin call uses those credentials with HTTP Basic auth:
+
+```bash
+SWAR=https://swar-urov.onrender.com
+AUTH='your-admin-username:your-admin-password'
+
+# Maintenance on (with a message) and off
+curl -u "$AUTH" -X PUT $SWAR/v1/admin/maintenance -d '{"enabled":true,"message":"Back in 15 minutes"}'
+curl -u "$AUTH" -X PUT $SWAR/v1/admin/maintenance -d '{"enabled":false}'
+
+# Create a popup (kind: update, support or info); add "activate":true to show it at once
+curl -u "$AUTH" -X POST $SWAR/v1/admin/popups -d '{"kind":"update","title":"Swar 1.2.4 is out","message":"Update for the latest fixes.","buttonText":"Update","buttonUrl":"https://github.com/SudhanshuMatrix/Swar/releases/latest"}'
+curl -u "$AUTH" -X POST $SWAR/v1/admin/popups -d '{"kind":"support","title":"Support Swar","message":"Swar is free. If you enjoy it, consider supporting us.","buttonText":"Support us","buttonUrl":"https://example.com"}'
+
+# List every popup with its ID, and see which one is active
+curl -u "$AUTH" $SWAR/v1/admin/popups
+
+# Show popup 2 (replaces whichever popup was showing), check it, hide it
+curl -u "$AUTH" -X PUT $SWAR/v1/admin/popups/active -d '{"id":2}'
+curl -u "$AUTH" $SWAR/v1/admin/popups/active
+curl -u "$AUTH" -X DELETE $SWAR/v1/admin/popups/active
+
+# Edit or delete popup 2
+curl -u "$AUTH" -X PUT $SWAR/v1/admin/popups/2 -d '{"kind":"support","title":"Support Swar","message":"New text"}'
+curl -u "$AUTH" -X DELETE $SWAR/v1/admin/popups/2
+```
+
+A popup with `"dismissible":false` has no close button, so the app stays
+behind it until you deactivate it (useful for a required update). The app
+learns about a change from the next request it makes, when it comes back to the
+foreground, or within ten minutes at most. The settings are stored in the
+server's database, so on a host without a persistent disk they reset when the
+server restarts.
+
 More about the server:
 [API reference](server/docs/API.md),
 [deployment and sizing](server/docs/DEPLOYMENT.md),

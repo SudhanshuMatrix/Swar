@@ -198,6 +198,29 @@ Playback is anchored to server time: while `playing`, position = `positionMs + (
 
 Jams live in memory. They end after `JAM_IDLE_TTL` with nobody connected, after `JAM_MAX_LIFETIME`, or on restart.
 
+## App status and admin
+
+Every response carries `X-Swar-Maintenance: on|off` and `X-Swar-Popup: <key>|none`. The popup key changes whenever a popup is activated or edited.
+
+`GET /v1/status` → `{maintenance: {enabled, message}, popup: {id, kind, title, message, buttonText, buttonUrl, dismissible, createdAt, updatedAt} | null, popupKey}`.
+
+While maintenance is on, every route except `/healthz`, `/readyz`, `/health`, `/metrics`, `/v1/status` and `/v1/admin/*` answers `503` with code `maintenance` and the maintenance message.
+
+Admin routes need HTTP Basic auth with `ADMIN_USERNAME` / `ADMIN_PASSWORD` (`404 admin_disabled` when those are unset, `401` on wrong credentials; failed attempts are rate limited hard):
+
+| Route | Body | Does |
+| --- | --- | --- |
+| `GET /v1/admin/maintenance` | | current state |
+| `PUT /v1/admin/maintenance` | `{enabled, message?}` | turn maintenance on or off |
+| `GET /v1/admin/popups` | | `{popups: [...], activeId}` (0 when none) |
+| `POST /v1/admin/popups` | `{kind, title, message, buttonText?, buttonUrl?, dismissible?, activate?}` | create; `kind` is `update`, `support` or `info` |
+| `GET /v1/admin/popups/{id}` | | one popup |
+| `PUT /v1/admin/popups/{id}` | same as create | replace its fields (`activate: true` also shows it) |
+| `DELETE /v1/admin/popups/{id}` | | delete (deactivates it if active) |
+| `GET /v1/admin/popups/active` | | `{active, popup}` |
+| `PUT /v1/admin/popups/active` | `{id}` | show this popup, replacing the active one |
+| `DELETE /v1/admin/popups/active` | | show no popup |
+
 ## Health and metrics
 
 `GET /healthz` (liveness), `GET /readyz` (database check), `GET /metrics` (Prometheus text format, prefix `swar_`).

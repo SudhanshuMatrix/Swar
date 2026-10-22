@@ -64,7 +64,15 @@ type Config struct {
 	JamMaxLifetime     time.Duration
 
 	RadioSessionTTL time.Duration
+
+	// AdminUsername and AdminPassword protect /v1/admin (maintenance mode
+	// and popups). The admin API stays off unless both are set.
+	AdminUsername string
+	AdminPassword string
 }
+
+// AdminEnabled reports whether the admin API is configured.
+func (c *Config) AdminEnabled() bool { return c.AdminUsername != "" && c.AdminPassword != "" }
 
 // Load reads the configuration from the environment.
 func Load() (*Config, error) {
@@ -114,6 +122,9 @@ func LoadFrom(getenv func(string) string) (*Config, error) {
 		JamMaxLifetime:     e.dur("JAM_MAX_LIFETIME", 12*time.Hour),
 
 		RadioSessionTTL: e.dur("RADIO_SESSION_TTL", 6*time.Hour),
+
+		AdminUsername: e.str("ADMIN_USERNAME", ""),
+		AdminPassword: getenv("ADMIN_PASSWORD"),
 	}
 	if len(e.errs) > 0 {
 		return nil, errors.Join(e.errs...)

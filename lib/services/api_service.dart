@@ -7,6 +7,7 @@ import '../core/constants.dart';
 import '../models/online_artist.dart';
 import '../models/online_playlist.dart';
 import '../models/track.dart';
+import '../state/app_status.dart';
 
 class StreamResult {
   final String url;
@@ -69,7 +70,7 @@ class ApiService {
 
   /// One client for every request, so connections to the server are kept
   /// open and reused instead of paying a new TLS handshake each time.
-  static final http.Client _http = http.Client();
+  static final http.Client _http = _StatusClient(http.Client());
   String? _token;
 
   // ---- Device identity ----
@@ -139,6 +140,11 @@ class ApiService {
     final code = err is Map ? (err['code'] as String? ?? 'error') : (body?['code'] as String? ?? 'error');
     final msg = (body?['message'] as String?) ?? (err is String ? err : 'Request failed (${res.statusCode})');
     throw ApiException(res.statusCode, code, msg);
+  }
+
+  /// Maintenance mode and the active popup (see [AppStatus]).
+  Future<Map<String, dynamic>> status() async {
+    return (await _public('GET', '/v1/status') as Map).cast<String, dynamic>();
   }
 
   // ---- Catalog (legacy routes, unchanged contract) ----
@@ -267,6 +273,21 @@ class ApiService {
         .toList());
   }
 
+  /// A few songs and singers for [query], for suggestions while typing. One
+  /// small request, which also warms the server's cache for the full search.
+  Future<({List<Track> songs, List<OnlineArtist> artists})> suggest(String query) async {
+    final q = Uri(queryParameters: {'q': query, 'type': 'all', 'limit': '5'}).query;
+    final data = await _public('GET', '/v1/search?$q') as Map<String, dynamic>;
+    List<Map<String, dynamic>> results(String key) =>
+        (((data[key] as Map<String, dynamic>?)?['results'] as List?) ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .toList();
+    return (
+      songs: results('songs').map(Track.fromJson).where((t) => t.playable).toList(),
+      artists: results('artists').map(OnlineArtist.fromJson).toList(),
+    );
+  }
+
   /// The artist's profile with their top songs.
   Future<OnlineArtist> artist(String id) async {
     final data = await _public('GET', '/v1/artists/${Uri.encodeComponent(id)}');
@@ -389,5 +410,19 @@ class ApiService {
       path: '/v1/jams/$jamId/ws',
       queryParameters: {'access_token': token},
     );
+  }
+}
+
+/// Passes the maintenance and popup headers of every response to
+/// [AppStatus], so any request (a search, a song) notices a change.
+class _StatusClient extends http.BaseClient {
+  final http.Client _inner;
+  _StatusClient(this._inner);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final res = await _inner.send(request);
+    AppStatus.instance.observe(res.headers['x-swar-maintenance'], res.headers['x-swar-popup']);
+    return res;
   }
 }
