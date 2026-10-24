@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'dart:collection';
-import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import 'ytdlp/device_ytdlp.dart';
 import 'ytdlp/ytdlp_parse.dart';
+import 'ytdlp/ytdlp_runner.dart' show YtDlpRunException;
 
 /// A Deep Search song YouTube wouldn't give this device.
 class YouTubeAudioException implements Exception {
@@ -21,23 +20,22 @@ class YouTubeAudioException implements Exception {
 ///
 /// The server only sends the video's details. The app asks YouTube for the
 /// video's audio-only stream itself, so YouTube's blocks on the server
-/// don't matter. Two tools can do that here, tried in order:
-///
-/// - yt-dlp on this device ([DeviceYtDlp]), which keeps up with YouTube's
-///   changes best. First on desktop.
-/// - youtube_explode_dart, which needs no download and starts faster. First
-///   on Android, where starting Python for yt-dlp takes a few seconds.
+/// don't matter. Only yt-dlp on this device ([DeviceYtDlp]) does that, and
+/// it also finds the YouTube video for catalog songs; until it has been
+/// downloaded, songs fail here and the player falls back to the server's
+/// relay (which runs yt-dlp too).
 ///
 /// Resolved streams are cached (at most [_maxCached]) until shortly before
 /// their signed URL expires. A video is never resolved twice at the same
-/// time: callers share the request. Not used on the web, where browsers
-/// refuse these requests.
+/// time: callers share the request. Not used where yt-dlp can't run on the
+/// device (the web, iOS).
 class YouTubeAudio {
   YouTubeAudio._();
 
-  static bool get supported => !kIsWeb;
+  static bool get supported => DeviceYtDlp.supported;
 
-  static YoutubeExplode? _yt;
+  static const _notReady = YouTubeAudioException("yt-dlp isn't ready on this device yet. Try again in a moment.");
+
   static const _maxCached = 64;
   static final _cache = LinkedHashMap<String, DeviceStream>();
   static final _inflight = <String, Future<DeviceStream>>{};
@@ -95,90 +93,59 @@ class YouTubeAudio {
     } catch (_) {}
   }
 
-  static bool get _deviceYtDlpFirst => !kIsWeb && !Platform.isAndroid;
-
   static Future<DeviceStream> _resolveChain(String id, bool background) async {
-    final ytdlp = DeviceYtDlp.supported && DeviceYtDlp.instance.installed;
-    final order = <Future<DeviceStream> Function()>[
-      if (ytdlp && _deviceYtDlpFirst) () => DeviceYtDlp.instance.resolve(id, background: background),
-      () => _explode(id),
-      if (ytdlp && !_deviceYtDlpFirst) () => DeviceYtDlp.instance.resolve(id, background: background),
-    ];
-    Object? firstError;
-    for (final attempt in order) {
-      try {
-        return await attempt();
-      } on YtDlpUnplayable catch (e) {
-        // The video itself is restricted: another tool won't change that.
-        throw YouTubeAudioException(e.message);
-      } catch (e) {
-        debugPrint('Swar: resolving $id failed: $e');
-        firstError ??= e;
-      }
-    }
-    if (firstError is YouTubeAudioException) throw firstError;
-    throw YouTubeAudioException(firstError?.toString() ?? "Couldn't get this song from YouTube.");
-  }
-
-  static Future<DeviceStream> _explode(String id) async {
-    final yt = _yt ??= YoutubeExplode();
-    final StreamManifest manifest;
+    if (!DeviceYtDlp.instance.installed) throw _notReady;
     try {
-      manifest = await yt.videos.streamsClient.getManifest(id).timeout(const Duration(seconds: 25));
-    } on VideoUnplayableException catch (e) {
-      throw YouTubeAudioException(_reason(e.message));
-    } on RequestLimitExceededException {
-      throw const YouTubeAudioException('YouTube is limiting requests from this device right now. Try again soon.');
+      return await DeviceYtDlp.instance.resolve(id, background: background);
+    } on YtDlpUnplayable catch (e) {
+      throw YouTubeAudioException(e.message);
+    } on YouTubeAudioException {
+      rethrow;
+    } catch (e) {
+      debugPrint('Swar: resolving $id with yt-dlp failed: $e');
+      throw YouTubeAudioException(e is YtDlpRunException ? e.message : "Couldn't get this song from YouTube.");
     }
-    final best = _pick(manifest.audioOnly);
-    if (best == null) throw const YouTubeAudioException('YouTube has no audio for this video.');
-    final url = best.url.toString();
-    return DeviceStream(
-      url: url,
-      expires: streamExpiry(url),
-      bitrateKbps: best.bitrate.kiloBitsPerSecond.round(),
-      via: 'youtube_explode',
-    );
   }
 
   static final _matches = LinkedHashMap<String, String>();
 
   /// Finds the YouTube video for a catalog song (Spotify, Deezer...) by
-  /// searching YouTube from this device. Prefers a video whose length
-  /// matches the song and skips live, cover and remix uploads unless the
-  /// song itself is one. Returns null when nothing fits.
+  /// searching YouTube with yt-dlp on this device. Prefers a video whose
+  /// length matches the song and skips live, cover and remix uploads unless
+  /// the song itself is one. Returns null when nothing fits.
   static Future<String?> findVideoId(String title, String artist, Duration duration) async {
     final key = '${title.toLowerCase()}|${artist.toLowerCase()}';
     final known = _matches[key];
     if (known != null) return known;
-    final yt = _yt ??= YoutubeExplode();
-    final results = await yt.search.search('$title $artist audio').timeout(const Duration(seconds: 15));
+    if (!DeviceYtDlp.instance.installed) throw _notReady;
+    final results = await DeviceYtDlp.instance.search('$title $artist audio', limit: 10);
     final wanted = title.toLowerCase();
     const variants = ['live', 'cover', 'remix', 'karaoke', 'instrumental', 'lofi', 'lo-fi', 'slowed', 'reverb', '8d'];
     String? best;
     var bestScore = -1 << 30;
     var rank = 0;
-    for (final v in results.take(10)) {
+    for (final v in results) {
       final name = v.title.toLowerCase();
+      final author = v.artist.toLowerCase();
       var score = -rank * 2;
       rank++;
       if (name.contains(wanted)) score += 30;
       if (artist.isNotEmpty &&
-          (name.contains(artist.toLowerCase()) || v.author.toLowerCase().contains(artist.toLowerCase()))) {
+          (name.contains(artist.toLowerCase()) || author.contains(artist.toLowerCase()))) {
         score += 15;
       }
-      if (v.author.endsWith(' - Topic')) score += 10;
+      if (author.endsWith(' - topic')) score += 10;
       for (final word in variants) {
         if (name.contains(word) && !wanted.contains(word)) score -= 40;
       }
       final d = v.duration;
-      if (d != null && duration > Duration.zero) {
+      if (d > Duration.zero && duration > Duration.zero) {
         final off = (d - duration).inSeconds.abs();
         score += off <= 5 ? 25 : (off <= 20 ? 10 : (off > 90 ? -50 : -10));
       }
       if (score > bestScore) {
         bestScore = score;
-        best = v.id.value;
+        best = v.youtubeId;
       }
     }
     if (best == null || bestScore < 0) return null;
@@ -189,23 +156,4 @@ class YouTubeAudio {
 
   /// Drops a cached URL that failed to play, so the next try asks again.
   static void forget(String trackId) => _cache.remove(_id(trackId));
-
-  /// The best audio-only stream in the original language. MP4 (AAC) comes
-  /// first because every platform's player handles it, Apple's included.
-  static AudioOnlyStreamInfo? _pick(List<AudioOnlyStreamInfo> streams) {
-    final original = streams.where((s) => s.audioTrack == null || s.audioTrack!.audioIsDefault).toList();
-    final pool = original.isNotEmpty ? original : streams;
-    if (pool.isEmpty) return null;
-    final mp4 = pool.where((s) => s.container == StreamContainer.mp4).toList();
-    return (mp4.isNotEmpty ? mp4 : pool).sortByBitrate().first;
-  }
-
-  static String _reason(String message) {
-    final m = message.toLowerCase();
-    if (m.contains('sign in') || m.contains('age')) return 'YouTube only plays this video to signed-in adults.';
-    if (m.contains('private')) return 'This YouTube video is private.';
-    if (m.contains('country') || m.contains('region')) return "This YouTube video isn't available in your country.";
-    if (m.contains('removed') || m.contains('unavailable')) return 'This YouTube video is no longer available.';
-    return "YouTube won't play this video.";
-  }
 }

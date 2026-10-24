@@ -16,6 +16,10 @@ release notes.
 
 - JioSaavn songs play again. Since 1.2.6 the server asked JioSaavn for "saavn:<id>" instead of the song's own ID, so every song came back "track not found" (album, artist, playlist, lyrics and related lookups were affected the same way).
 
+### Changed
+
+- Deep Search songs, and YouTube Music songs in main search, now play only through yt-dlp: on the device, or the server's relay (also yt-dlp) when it can't. youtube_explode_dart is no longer used, including for finding the YouTube video of Deezer, iTunes and Spotify songs.
+
 ### Added
 
 - `DELETE /v1/admin/cache` empties every server cache. It uses the existing admin login (`ADMIN_USERNAME` / `ADMIN_PASSWORD`).
