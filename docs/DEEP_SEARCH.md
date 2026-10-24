@@ -139,11 +139,17 @@ Server (Go), now the fallback:
   was available while writing them. Check on a device: the first Deep
   Search, playback, an update, and that `res/raw/ytdlp` is gone from the
   release APK (`aapt2 dump resources`).
-- **JavaScript runtime.** YouTube now needs one for many videos. On desktop,
+- **JavaScript runtime.** YouTube now needs one for most videos. On desktop,
   yt-dlp uses Deno when it is on `PATH`, and Swar passes Node.js when only
-  that is installed. Android's Python has none, so yt-dlp there falls back
-  to the formats it can read without one; videos that need a runtime fail
-  on Android and go to the server relay.
+  that is installed. Android has none, so the APK ships QuickJS-ng as
+  `libqjs.so`: `scripts/build_quickjs_android.sh` (run by
+  `prepare_platforms.sh`) builds it with the NDK from the engine source,
+  pinned by SHA-256, with a small command line
+  (`packaging/android/quickjs/swar_qjs.c`), and `YtDlpChannel.kt` passes it
+  to every run with a cache folder, so YouTube's player script is prepared
+  once rather than for every song. The first song after an install is the
+  slow one. Not yet checked on a phone: that the binary starts there and
+  solves a live challenge.
 - **Checksums, not signatures.** The checksum list comes from the same
   GitHub release over HTTPS; its GPG signature is not checked (no OpenPGP
   library in the app).

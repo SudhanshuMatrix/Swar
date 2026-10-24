@@ -27,6 +27,12 @@ import java.util.concurrent.TimeUnit
  *
  * Every run happens off the main thread, at most two at a time, with a
  * timeout and an output limit; Dart can cancel a run by its id.
+ *
+ * YouTube hides most audio formats behind JavaScript challenges, which
+ * yt-dlp solves with an external runtime. The APK ships QuickJS-ng as
+ * libqjs.so (scripts/build_quickjs_android.sh) and every run is pointed at
+ * it. Runs share a cache folder, so YouTube's player script is downloaded
+ * and prepared once instead of on every song.
  */
 object YtDlpChannel : MethodChannel.MethodCallHandler {
     private const val CHANNEL = "swar/ytdlp"
@@ -58,6 +64,14 @@ object YtDlpChannel : MethodChannel.MethodCallHandler {
      */
     private fun deployed(): File =
         File(File(File(app.noBackupFilesDir, "youtubedl-android"), "yt-dlp"), "yt-dlp")
+
+    /** The bundled QuickJS-ng, when this APK has one. */
+    private val quickJs: File? by lazy {
+        File(app.applicationInfo.nativeLibraryDir, "libqjs.so").takeIf { it.canExecute() }
+    }
+
+    /** yt-dlp's cache (player scripts, solved challenges). */
+    private val cacheDir: File by lazy { File(app.cacheDir, "yt-dlp").also { it.mkdirs() } }
 
     @Synchronized
     private fun ensureReady() {
@@ -148,6 +162,9 @@ object YtDlpChannel : MethodChannel.MethodCallHandler {
                         2 -> request.addOption(o[0], o[1])
                     }
                 }
+                quickJs?.let { request.addOption("--js-runtimes", "quickjs:${it.absolutePath}") }
+                // Without this the library adds --no-cache-dir.
+                request.addOption("--cache-dir", cacheDir.absolutePath)
                 val response = YoutubeDL.getInstance().execute(request, id, false, null)
                 val out = response.out
                 if (out.length > maxBytes) post { result.error("too_large", "yt-dlp output exceeded the limit", null) }

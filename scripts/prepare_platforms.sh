@@ -36,6 +36,8 @@ if has android; then
   cp packaging/android/YtDlpChannel.kt android/app/src/main/kotlin/com/sonivo/sonivo/YtDlpChannel.kt
   # App icon and the notification's icons.
   cp -R "$ICONS"/android/res/. android/app/src/main/res/
+  # The JavaScript runtime yt-dlp needs for YouTube (libqjs.so).
+  bash scripts/build_quickjs_android.sh
 fi
 
 if has macos; then

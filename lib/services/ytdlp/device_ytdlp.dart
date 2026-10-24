@@ -43,7 +43,9 @@ class DeviceYtDlp extends ChangeNotifier {
   static const updateEvery = Duration(hours: 24);
   static const forceAfter = Duration(hours: 48);
   static const _searchTimeout = Duration(seconds: 30);
-  static const _resolveTimeout = Duration(seconds: 40);
+  // On a phone the first song after an install also prepares YouTube's
+  // player script in QuickJS; later songs reuse yt-dlp's cache of it.
+  static final _resolveTimeout = Duration(seconds: !kIsWeb && Platform.isAndroid ? 90 : 40);
 
   static bool get supported =>
       !kIsWeb && (Platform.isAndroid || Platform.isLinux || Platform.isWindows || Platform.isMacOS);
