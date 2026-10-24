@@ -14,7 +14,7 @@ platform. It is written for whoever works on Swar next.
 | Common track model | `catalog.Track` (server), `Track` (app) | Provider, provider ID and `providerMeta` keep source details. |
 | Playback descriptors | `server/internal/playback` | Cached until shortly before the signed URL expires, never served stale. |
 | Server cache | `server/internal/cache` | Bounded LRU with TTLs and request coalescing. Errors are never cached. |
-| Device playback of Deep Search songs | `lib/services/youtube_audio.dart` | The app asks YouTube for the audio-only stream itself (youtube_explode_dart). The server relay is the fallback. |
+| Device playback of Deep Search songs | `lib/services/youtube_audio.dart` | yt-dlp on the device resolves the audio-only stream (and finds the YouTube video for catalog songs). The server relay, also yt-dlp, is the fallback. |
 
 ## yt-dlp runs on the device
 
@@ -72,10 +72,12 @@ server keeps doing what it did, as the fallback.
   server's full Deep Search runs, as before. Input is validated with the
   server's rules first: search text, or a YouTube link rebuilt from its
   video ID; other URLs are refused.
-- **Playback** (`lib/services/youtube_audio.dart`): the stream is resolved on
-  the device by yt-dlp or youtube_explode_dart. Desktop tries yt-dlp first.
-  Android tries youtube_explode first because starting Python takes a few
-  seconds, and yt-dlp when that fails. The server relay is the last resort.
+- **Playback** (`lib/services/youtube_audio.dart`): only yt-dlp is used. The
+  stream is resolved on the device by yt-dlp, and catalog songs (Deezer,
+  iTunes, Spotify) without a server match are looked up with a yt-dlp
+  search on the device. Until yt-dlp is downloaded, or when it fails, the
+  server relay (yt-dlp on the server, needs `DEEPSEARCH_PLAYBACK_ENABLED`)
+  is the last resort.
   A restricted video (private, members-only, DRM, age-gated) is reported, not
   retried elsewhere.
 
@@ -140,7 +142,8 @@ Server (Go), now the fallback:
 - **JavaScript runtime.** YouTube now needs one for many videos. On desktop,
   yt-dlp uses Deno when it is on `PATH`, and Swar passes Node.js when only
   that is installed. Android's Python has none, so yt-dlp there falls back
-  to the formats it can read without one, and youtube_explode stays first.
+  to the formats it can read without one; videos that need a runtime fail
+  on Android and go to the server relay.
 - **Checksums, not signatures.** The checksum list comes from the same
   GitHub release over HTTPS; its GPG signature is not checked (no OpenPGP
   library in the app).
@@ -155,7 +158,7 @@ Server (Go), now the fallback:
 ## Rights and safety
 
 On the device, a Deep Search song is streamed by the listener's own app
-from YouTube, as youtube_explode already did; nothing is downloaded for
+from YouTube with yt-dlp; nothing is downloaded for
 keeping. The server only fetches YouTube audio (its relay) when the
 operator turns on `DEEPSEARCH_PLAYBACK_ENABLED`, and offline copies of Deep
 Search songs still need `DEEPSEARCH_DOWNLOADS_ENABLED`. DRM-protected,

@@ -399,10 +399,11 @@ class PlayerProvider extends ChangeNotifier {
 
   /// JioSaavn songs play straight from the server's URL. Deep Search catalog
   /// songs (Spotify, Deezer, iTunes...) only come with a 30-second preview,
-  /// so the full song is played from YouTube on this device: the
-  /// video the server matched, or else one found by searching YouTube here.
-  /// The web can't reach YouTube, so it uses the server's relay. The
-  /// preview is the last resort. Returns the server URL when one was used.
+  /// so the full song is played from YouTube with yt-dlp on this device:
+  /// the video the server matched, or else one yt-dlp finds here. When
+  /// yt-dlp can't run here (the web) or fails, the server's relay (yt-dlp
+  /// on the server) gets a try. The preview is the last resort. Returns the
+  /// server URL when one was used.
   Future<String?> _loadCatalogSong(Track track, Duration? start, int gen) async {
     StreamResult? stream;
     Object? serverError;
@@ -434,12 +435,15 @@ class PlayerProvider extends ChangeNotifier {
         debugPrint('Swar: full song from YouTube failed for ${track.id} ($ytId): $err');
         if (ytId != null) YouTubeAudio.forget(ytId);
       }
-    } else if (ytId != null) {
+    }
+    if (ytId != null) {
       try {
         final relay = await api.resolveAudio('yt:$ytId');
         _check(gen);
         await audioHandler.loadUrl(relay.url, item, startAt: start);
         return relay.url;
+      } on _Superseded {
+        rethrow;
       } catch (err) {
         debugPrint('Swar: server relay failed for ${track.id} ($ytId): $err');
       }
@@ -462,8 +466,8 @@ class PlayerProvider extends ChangeNotifier {
     ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(SnackBar(content: Text(message)));
   }
 
-  /// Plays a Deep Search song from YouTube on this device: yt-dlp on the
-  /// device or youtube_explode (see [YouTubeAudio]). A cached URL that
+  /// Plays a Deep Search song from YouTube with yt-dlp on this device (see
+  /// [YouTubeAudio]). A cached URL that
   /// fails to load (it expired or was revoked early) is resolved again
   /// once. Only when the device can't get the song does the server's relay
   /// get one try; when that fails too, the device's reason is the one worth

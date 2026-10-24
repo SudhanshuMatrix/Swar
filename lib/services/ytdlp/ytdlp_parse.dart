@@ -17,7 +17,7 @@ class DeviceStream {
   final Map<String, String> headers;
   final int bitrateKbps;
 
-  /// Which tool resolved it: "yt-dlp" or "youtube_explode".
+  /// Which tool resolved it ("yt-dlp").
   final String via;
 
   const DeviceStream({
