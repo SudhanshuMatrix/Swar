@@ -128,7 +128,9 @@ func (f *Fake) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		songs := []any{}
 		for _, id := range ids {
-			if id == "" || id == "missing" {
+			// Like the upstream, an ID that is not a Saavn song ID (for
+			// example a Swar internal ID such as "saavn:s1") finds nothing.
+			if id == "" || id == "missing" || strings.Contains(id, ":") {
 				continue
 			}
 			songs = append(songs, Song(id, "Song "+id, "a2", "Pritam", "al2", "Album "+id, 180))

@@ -120,6 +120,10 @@ func (r *Resolver) Invalidate(trackID string) {
 	}
 }
 
+// ClearCache drops every cached descriptor and returns how many entries
+// the cache held. In the server the cache is shared with the catalog.
+func (r *Resolver) ClearCache() int { return r.cache.Clear() }
+
 // PrefetchResult pairs metadata with a descriptor (or the error message).
 type PrefetchResult struct {
 	TrackID    string         `json:"trackId"`

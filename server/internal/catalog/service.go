@@ -121,6 +121,25 @@ func (s *Service) SetMatchedYouTubeID(trackID, ytID string) {
 	s.ytMatched[trackID] = ytID
 }
 
+// CacheCleared counts what ClearCache dropped.
+type CacheCleared struct {
+	Entries        int `json:"entries"`
+	YouTubeMatches int `json:"youtubeMatches"`
+}
+
+// ClearCache drops every cached catalog response and remembered YouTube
+// match, so the next requests ask the providers again.
+func (s *Service) ClearCache() CacheCleared {
+	s.ytMatchMu.Lock()
+	n := len(s.ytMatched)
+	s.ytMatched = make(map[string]string)
+	s.ytMatchMu.Unlock()
+	if s.ytResolver != nil {
+		n += s.ytResolver.ClearCache()
+	}
+	return CacheCleared{Entries: s.cache.Clear(), YouTubeMatches: n}
+}
+
 // MatchYouTube resolves a track to its matching YouTube video ID.
 func (s *Service) MatchYouTube(ctx context.Context, t *Track) (string, error) {
 	if t == nil {
@@ -294,6 +313,18 @@ func (s *Service) isPrimary(provider string) bool {
 	return false
 }
 
+// primaryKey is the ID to hand the primary provider. A single-catalog
+// primary such as Saavn knows only its own IDs ("abc123"), so it gets the
+// bare provider ID; sending "saavn:abc123" upstream finds nothing and every
+// song becomes unplayable. A primary that serves several providers (one
+// with Supports) needs the full internal ID to route it.
+func (s *Service) primaryKey(provider, pid string) string {
+	if _, multi := s.primary.(interface{ Supports(string) bool }); multi {
+		return MakeID(provider, pid)
+	}
+	return pid
+}
+
 // Track returns one track by internal ID.
 func (s *Service) Track(ctx context.Context, id string) (*Track, error) {
 	provider, pid, ok := ParseID(id)
@@ -303,7 +334,7 @@ func (s *Service) Track(ctx context.Context, id string) (*Track, error) {
 	key := "track:" + MakeID(provider, pid)
 	if s.isPrimary(provider) {
 		return load(ctx, s, s.ttl.Entity, key, func(ctx context.Context) (*Track, error) {
-			ts, err := s.primary.Tracks(ctx, []string{MakeID(provider, pid)})
+			ts, err := s.primary.Tracks(ctx, []string{s.primaryKey(provider, pid)})
 			if err != nil {
 				return nil, err
 			}
@@ -343,7 +374,7 @@ func (s *Service) Tracks(ctx context.Context, ids []string) ([]Track, error) {
 			continue
 		}
 		if s.isPrimary(provider) {
-			missing = append(missing, MakeID(provider, pid))
+			missing = append(missing, s.primaryKey(provider, pid))
 		} else {
 			others = append(others, full)
 		}
@@ -407,7 +438,7 @@ func (s *Service) Related(ctx context.Context, id string, limit int) ([]Track, e
 		return nil, Unavailable("related tracks are only available for catalog tracks")
 	}
 	ts, err := load(ctx, s, s.ttl.Related, cacheKey("related", MakeID(provider, pid), limit), func(ctx context.Context) ([]Track, error) {
-		return s.primary.Related(ctx, MakeID(provider, pid), limit)
+		return s.primary.Related(ctx, s.primaryKey(provider, pid), limit)
 	})
 	if err == nil {
 		s.Remember(ts...)
@@ -420,7 +451,7 @@ func (s *Service) primaryID(id string) (string, error) {
 	if !ok || !s.isPrimary(provider) {
 		return "", Invalid("invalid id")
 	}
-	return MakeID(provider, pid), nil
+	return s.primaryKey(provider, pid), nil
 }
 
 func (s *Service) Album(ctx context.Context, id string) (*Album, error) {
@@ -572,7 +603,7 @@ func (s *Service) MediaSources(ctx context.Context, id string) ([]MediaSource, t
 		return nil, time.Time{}, Invalid("invalid track id")
 	}
 	if s.isPrimary(provider) {
-		return s.primary.MediaSources(ctx, MakeID(provider, pid))
+		return s.primary.MediaSources(ctx, s.primaryKey(provider, pid))
 	}
 	if src, ok := s.sources[provider]; ok {
 		return src.MediaSources(ctx, pid)

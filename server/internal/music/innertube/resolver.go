@@ -92,6 +92,15 @@ func (r *Resolver) ResolveYouTubeID(ctx context.Context, title, artist string, d
 	return bestID, nil
 }
 
+// ClearCache forgets every remembered match and returns how many there were.
+func (r *Resolver) ClearCache() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := len(r.cache)
+	r.cache = make(map[string]string)
+	return n
+}
+
 // SearchCandidates queries YouTube's InnerTube search endpoint.
 func (r *Resolver) SearchCandidates(ctx context.Context, query string) ([]Candidate, error) {
 	payload := map[string]any{
