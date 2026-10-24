@@ -122,6 +122,16 @@ func (s *Service) rememberMeta(id, title, artist string) {
 	s.meta[id] = q
 }
 
+// ClearCache drops every cached search result and returns how many there
+// were. Searches already running are shared as before. The title/artist
+// notes kept for swapping an unplayable video stay: they are not results.
+func (s *Service) ClearCache() int {
+	if s.cache == nil {
+		return 0
+	}
+	return s.cache.Clear()
+}
+
 func (s *Service) metaQuery(id string) string {
 	s.metaMu.Lock()
 	defer s.metaMu.Unlock()

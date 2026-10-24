@@ -181,6 +181,30 @@ func (s *Server) handleAdminSetMaintenance(w http.ResponseWriter, r *http.Reques
 	ok(w, s.status.get().Maintenance)
 }
 
+// ---- caches ----
+
+// handleAdminClearCache empties every in-memory cache: catalog responses
+// and playback descriptors, Deep Search results, YouTube matches and the
+// device check cache. The server keeps no Redis or file cache. Nothing is
+// lost: the next requests load fresh data from the providers and the
+// database.
+func (s *Server) handleAdminClearCache(w http.ResponseWriter, r *http.Request) {
+	cat := s.cat.ClearCache()
+	cleared := map[string]int{
+		"catalog":        cat.Entries,
+		"playback":       s.pb.ClearCache(), // 0 when it shares the catalog's cache
+		"youtubeMatches": cat.YouTubeMatches,
+		"deepSearch":     s.deep.ClearCache(),
+		"devices":        s.devCache.Clear(),
+	}
+	total := 0
+	for _, n := range cleared {
+		total += n
+	}
+	s.log.Info("caches cleared", "entries", total, "ip", s.clientIP(r))
+	ok(w, map[string]any{"cleared": cleared, "total": total})
+}
+
 // ---- popups ----
 
 type popupBody struct {

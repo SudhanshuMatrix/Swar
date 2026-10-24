@@ -154,3 +154,19 @@ func TestDeletePrefix(t *testing.T) {
 		t.Fatalf("n=%d len=%d", n, c.Len())
 	}
 }
+
+func TestClear(t *testing.T) {
+	c := New(10)
+	c.Set("a", 1, time.Minute)
+	c.Set("b", 2, time.Minute)
+	if n := c.Clear(); n != 2 || c.Len() != 0 {
+		t.Fatalf("Clear() = %d, Len() = %d", n, c.Len())
+	}
+	if _, ok := c.Get("a"); ok {
+		t.Fatal("entry survived Clear")
+	}
+	c.Set("c", 3, time.Minute)
+	if v, ok := c.Get("c"); !ok || v != 3 {
+		t.Fatal("cache unusable after Clear")
+	}
+}

@@ -12,6 +12,14 @@ release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- JioSaavn songs play again. Since 1.2.6 the server asked JioSaavn for "saavn:<id>" instead of the song's own ID, so every song came back "track not found" (album, artist, playlist, lyrics and related lookups were affected the same way).
+
+### Added
+
+- `DELETE /v1/admin/cache` empties every server cache. It uses the existing admin login (`ADMIN_USERNAME` / `ADMIN_PASSWORD`).
+
 ## [1.2.7] - 2026-10-24
 
 ### Added

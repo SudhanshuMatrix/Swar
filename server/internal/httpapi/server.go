@@ -98,6 +98,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/status", s.handleStatus)
 	mux.HandleFunc("GET /v1/admin/maintenance", s.requireAdmin(s.handleAdminGetMaintenance))
 	mux.HandleFunc("PUT /v1/admin/maintenance", s.requireAdmin(s.handleAdminSetMaintenance))
+	mux.HandleFunc("DELETE /v1/admin/cache", s.requireAdmin(s.handleAdminClearCache))
 	mux.HandleFunc("GET /v1/admin/popups", s.requireAdmin(s.handleAdminListPopups))
 	mux.HandleFunc("POST /v1/admin/popups", s.requireAdmin(s.handleAdminCreatePopup))
 	mux.HandleFunc("GET /v1/admin/popups/active", s.requireAdmin(s.handleAdminGetActivePopup))

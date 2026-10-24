@@ -214,6 +214,7 @@ Admin routes need HTTP Basic auth with `ADMIN_USERNAME` / `ADMIN_PASSWORD` (`404
 | --- | --- | --- |
 | `GET /v1/admin/maintenance` | | current state |
 | `PUT /v1/admin/maintenance` | `{enabled, message?}` | turn maintenance on or off |
+| `DELETE /v1/admin/cache` | | empty every server cache (catalog responses, playback descriptors, Deep Search results, YouTube matches, device checks); answers `{cleared: {catalog, playback, deepSearch, youtubeMatches, devices}, total}` with entry counts. All caches are in memory; nothing is lost, the next requests reload from the providers and the database |
 | `GET /v1/admin/popups` | | `{popups: [...], activeId}` (0 when none) |
 | `POST /v1/admin/popups` | `{kind, title, message, buttonText?, buttonUrl?, dismissible?, activate?}` | create; `kind` is `update`, `support` or `info` |
 | `GET /v1/admin/popups/{id}` | | one popup |

@@ -130,6 +130,17 @@ func (c *Cache) DeletePrefix(prefix string) int {
 	return n
 }
 
+// Clear removes every entry and returns how many there were. Loads in
+// progress are not interrupted; their results are stored as usual.
+func (c *Cache) Clear() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := c.ll.Len()
+	c.ll.Init()
+	c.items = map[string]*list.Element{}
+	return n
+}
+
 func (c *Cache) removeElement(el *list.Element) {
 	c.ll.Remove(el)
 	delete(c.items, el.Value.(*entry).key)

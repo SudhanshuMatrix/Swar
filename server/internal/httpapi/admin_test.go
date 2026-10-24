@@ -183,3 +183,46 @@ func TestPopups(t *testing.T) {
 		t.Fatalf("deleted popup still there: %d", code)
 	}
 }
+
+func TestAdminClearCache(t *testing.T) {
+	e := newEnv(t, setup{env: adminVars, media: true})
+	// Fill the catalog and descriptor caches.
+	if code, body := e.do(t, "GET", "/track/saavn:s1", "", nil); code != 200 {
+		t.Fatalf("track: %d %v", code, body)
+	}
+	before := e.fake.Count("song.getDetails")
+	if code, _ := e.do(t, "GET", "/track/saavn:s1", "", nil); code != 200 || e.fake.Count("song.getDetails") != before {
+		t.Fatal("second play should be served from the cache")
+	}
+
+	for _, c := range [][2]string{{"", ""}, {"boss", "wrong"}, {"other", "correct horse"}} {
+		code, body, h := e.admin(t, "DELETE", "/v1/admin/cache", c[0], c[1], nil)
+		if code != http.StatusUnauthorized || errCode(body) != "unauthorized" || h.Get("WWW-Authenticate") == "" {
+			t.Fatalf("%v: got %d %v", c, code, body)
+		}
+	}
+	if code, _ := e.do(t, "GET", "/track/saavn:s1", "", nil); code != 200 || e.fake.Count("song.getDetails") != before {
+		t.Fatal("a rejected request must not clear the cache")
+	}
+
+	code, body, _ := e.admin(t, "DELETE", "/v1/admin/cache", "boss", "correct horse", nil)
+	if code != http.StatusOK {
+		t.Fatalf("clear: %d %v", code, body)
+	}
+	data := body["data"].(map[string]any)
+	cleared := data["cleared"].(map[string]any)
+	if cleared["catalog"].(float64) < 1 || cleared["playback"].(float64) < 1 || data["total"].(float64) < 2 {
+		t.Fatalf("nothing reported cleared: %v", data)
+	}
+	if code, _ := e.do(t, "GET", "/track/saavn:s1", "", nil); code != 200 || e.fake.Count("song.getDetails") <= before {
+		t.Fatal("after clearing, the next play must ask the provider again")
+	}
+}
+
+func TestAdminClearCacheDisabledWithoutCredentials(t *testing.T) {
+	e := newEnv(t, setup{})
+	code, body, _ := e.admin(t, "DELETE", "/v1/admin/cache", "boss", "correct horse", nil)
+	if code != http.StatusNotFound || errCode(body) != "admin_disabled" {
+		t.Fatalf("got %d %v", code, body)
+	}
+}
