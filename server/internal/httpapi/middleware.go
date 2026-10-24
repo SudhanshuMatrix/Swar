@@ -207,7 +207,7 @@ func (s *Server) rateLimit(next http.Handler) http.Handler {
 			return
 		}
 		cost := 1.0
-		if strings.HasPrefix(r.URL.Path, "/v1/search/deep") {
+		if r.URL.Path == "/v1/search/deep" {
 			cost = 10
 		}
 		if !s.limiter.allow(s.clientIP(r), cost) {

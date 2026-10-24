@@ -35,9 +35,14 @@ class SonivoAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     player.playbackEventStream.listen(_broadcastState, onError: (Object e, StackTrace st) {});
   }
 
-  Future<void> loadUrl(String url, MediaItem item, {Duration? startAt}) async {
+  /// [headers] are sent with the request (yt-dlp names the User-Agent
+  /// YouTube expects); most sources need none.
+  Future<void> loadUrl(String url, MediaItem item, {Duration? startAt, Map<String, String>? headers}) async {
     mediaItem.add(item);
-    await player.setAudioSource(AudioSource.uri(Uri.parse(url)), initialPosition: startAt);
+    final source = headers == null || headers.isEmpty
+        ? AudioSource.uri(Uri.parse(url))
+        : AudioSource.uri(Uri.parse(url), headers: headers);
+    await player.setAudioSource(source, initialPosition: startAt);
   }
 
   /// just_audio's play() only completes when playback stops, so awaiting it

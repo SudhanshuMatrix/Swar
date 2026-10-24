@@ -2,10 +2,13 @@ package playback
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"swar/internal/cache"
+	"swar/internal/catalog"
+	"swar/internal/observability"
 	"swar/internal/testkit"
 )
 
@@ -88,5 +91,75 @@ func TestNewPrefetchCancelsOld(t *testing.T) {
 	}
 	if err := <-errCh; err == nil {
 		t.Fatal("superseded prefetch should report cancellation")
+	}
+}
+
+// busySource refuses background work (like Deep Search when listeners need
+// its slots) and serves listeners.
+type busySource struct {
+	calls   atomic.Int32
+	release chan struct{}
+}
+
+func (b *busySource) Track(ctx context.Context, id string) (*catalog.Track, error) {
+	return &catalog.Track{ID: "yt:" + id, Provider: catalog.ProviderYouTube, ProviderID: id, Title: "T"}, nil
+}
+
+func (b *busySource) MediaSources(ctx context.Context, id string) ([]catalog.MediaSource, time.Time, error) {
+	b.calls.Add(1)
+	if catalog.IsBackground(ctx) {
+		<-b.release
+		return nil, time.Time{}, catalog.NewError(catalog.KindRateLimited, "busy", catalog.ErrBackgroundBusy)
+	}
+	return []catalog.MediaSource{{Kind: "audio", URL: "https://x/a"}}, time.Now().Add(time.Hour), nil
+}
+
+func TestListenerJoiningRefusedPrefetchRetries(t *testing.T) {
+	// No primary catalog: "yt:" IDs go to the registered source.
+	cat := catalog.NewService(nil, cache.New(100), catalog.DefaultTTLs)
+	src := &busySource{release: make(chan struct{})}
+	cat.RegisterSource(catalog.ProviderYouTube, src)
+	m := observability.NewMetrics()
+	r := NewResolver(cat, cache.New(100), m)
+
+	pre := make(chan []PrefetchResult, 1)
+	go func() {
+		res, _ := r.Prefetch(context.Background(), "dev", []string{"yt:dQw4w9WgXcQ"}, true)
+		pre <- res
+	}()
+	waitFor(t, func() bool { return src.calls.Load() > 0 })
+	got := make(chan *Descriptor, 1)
+	go func() {
+		d, err := r.Resolve(context.Background(), "yt:dQw4w9WgXcQ")
+		if err != nil {
+			t.Errorf("listener resolve: %v", err)
+		}
+		got <- d
+	}()
+	waitFor(t, func() bool { return r.flights.Coalesced() > 0 })
+	close(src.release)
+	if d := <-got; d == nil || !d.Available {
+		t.Fatalf("listener should get a playable descriptor: %+v", d)
+	}
+	res := <-pre
+	if len(res) != 1 || res[0].Error == "" {
+		t.Fatalf("the refused prefetch reports an error: %+v", res)
+	}
+	if m.Counter("playback_background_retry_total").Load() != 1 || m.Counter(`prefetch_items_total{result="error"}`).Load() != 1 {
+		t.Fatal("retry and prefetch result should be counted")
+	}
+	if m.HistogramCount("playback_resolve") < 2 {
+		t.Fatal("resolve latency should be recorded")
+	}
+}
+
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not reached")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }

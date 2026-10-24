@@ -7,6 +7,7 @@ import '../models/playlist.dart';
 import '../services/download_service.dart';
 import '../state/library_provider.dart';
 import '../state/player_provider.dart';
+import '../widgets/playback_settings.dart';
 import '../widgets/ui.dart';
 import '../widgets/update_dialog.dart';
 import 'downloads_screen.dart';
@@ -168,6 +169,8 @@ class LibraryScreen extends StatelessWidget {
                     ),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DownloadsScreen())),
                   ),
+                  const Divider(indent: 16, endIndent: 16),
+                  const PlaybackSettingsTiles(),
                   const Divider(indent: 16, endIndent: 16),
                   ...library.playlists.map(
                     (p) => ListTile(

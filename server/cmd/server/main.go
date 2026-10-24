@@ -53,11 +53,13 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv, store, err := build(ctx, cfg, log)
+	srv, store, closeDeep, err := build(ctx, cfg, log)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
+	// Last resort: no yt-dlp process outlives the server.
+	defer closeDeep(0)
 
 	httpServer := &http.Server{
 		Addr:              cfg.Addr,
@@ -95,16 +97,21 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	bgCancel()
+	// Requests already running get a few seconds to finish; then any yt-dlp
+	// process still going is stopped so Shutdown is not held up by a slow
+	// extraction.
+	stopDeep := time.AfterFunc(5*time.Second, func() { closeDeep(5 * time.Second) })
+	defer stopDeep.Stop()
 	return httpServer.Shutdown(shutdownCtx)
 }
 
 // build wires every component together.
-func build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*httpapi.Server, *repository.Store, error) {
+func build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*httpapi.Server, *repository.Store, func(time.Duration), error) {
 	metrics := observability.NewMetrics()
 
 	store, err := repository.Open(ctx, cfg.DBPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	saavnClient, err := saavn.New(saavn.Options{
@@ -114,7 +121,7 @@ func build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*httpapi.
 	})
 	if err != nil {
 		store.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	// Deezer, iTunes, MusicBrainz and Spotify feed Deep Search.
 	musicEngine := music.NewEngine(music.EngineOptions{
@@ -135,6 +142,7 @@ func build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*httpapi.
 		Binary: cfg.YTDLPPath, Timeout: cfg.DeepSearchTimeout, MaxResults: cfg.DeepSearchMaxResults,
 		Concurrency: cfg.DeepSearchConcurrency, MaxOutput: cfg.DeepSearchMaxOutput,
 		Playback: cfg.DeepSearchPlayback, Downloads: cfg.DeepSearchDownloads, Metrics: metrics,
+		SearchTTL: cfg.DeepSearchSearchTTL, CacheEntries: cfg.DeepSearchCacheEntries,
 	})
 
 	c := cache.New(cfg.CacheMaxEntries)
@@ -162,6 +170,7 @@ func build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*httpapi.
 		return p.Results, nil
 	})
 
+	metrics.Gauge("deepsearch_running", func() float64 { return float64(deep.Running()) })
 	resolver := playback.NewResolver(cat, c, metrics)
 	lib := library.New(store, cat)
 	rec := recommendations.NewService(cat, lib)
@@ -179,5 +188,5 @@ func build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*httpapi.
 		Downloads: downloads.New(store, cat, resolver), Jam: jams, Store: store,
 		Tokens: auth.NewTokens(cfg.TokenSecret, cfg.TokenTTL),
 	})
-	return srv, store, nil
+	return srv, store, deep.Close, nil
 }

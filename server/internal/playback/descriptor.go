@@ -33,6 +33,10 @@ type Resolver struct {
 	mu        sync.Mutex
 	prefetchs map[string]inflight // owner -> in-flight prefetch
 	seq       uint64
+
+	// flights shares concurrent resolves of one track and stops a resolve
+	// once nobody waits for it (a superseded prefetch).
+	flights cache.Group
 }
 
 type inflight struct {
@@ -55,6 +59,12 @@ const (
 // Available=false and a reason; transport problems are errors.
 func (r *Resolver) Resolve(ctx context.Context, trackID string) (*Descriptor, error) {
 	d, err := r.resolve(ctx, trackID)
+	if err != nil && catalog.IsBackgroundBusy(err) && !catalog.IsBackground(ctx) {
+		// A listener joined a prefetch that was refused to keep capacity
+		// free for listeners: ask again as a listener.
+		r.m.Inc("playback_background_retry_total")
+		d, err = r.resolve(ctx, trackID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -73,9 +83,11 @@ func (r *Resolver) resolve(ctx context.Context, trackID string) (*Descriptor, er
 		return nil, catalog.Invalid("invalid track id")
 	}
 	id := catalog.MakeID(provider, pid)
-	d, err := cache.GetOrLoad(ctx, r.cache, "desc:"+id, 30*time.Second, func(ctx context.Context) (*Descriptor, time.Duration, error) {
+	d, err := cache.GetOrLoadShared(ctx, r.cache, &r.flights, "desc:"+id, 2*time.Minute, func(ctx context.Context) (*Descriptor, time.Duration, error) {
 		r.m.Inc("playback_resolves_total")
+		start := time.Now()
 		sources, exp, err := r.cat.MediaSources(ctx, id)
+		r.m.Observe("playback_resolve", time.Since(start))
 		if err != nil {
 			switch catalog.KindOf(err) {
 			case catalog.KindUnavailable, catalog.KindNotFound:
@@ -130,7 +142,9 @@ func (r *Resolver) Prefetch(ctx context.Context, owner string, trackIDs []string
 		ids = ids[:maxItems]
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
+	// Prefetching is speculative: sources run it at lower priority than
+	// anything a listener is waiting for.
+	ctx, cancel := context.WithCancel(catalog.Background(ctx))
 	defer cancel()
 	if owner != "" {
 		r.mu.Lock()
@@ -162,10 +176,16 @@ func (r *Resolver) Prefetch(ctx context.Context, owner string, trackIDs []string
 				res.Track = t
 			}
 			d, err := r.Resolve(ctx, id)
-			if err != nil {
+			switch {
+			case err != nil:
 				res.Error = errMessage(err)
-			} else {
+				r.m.Inc(`prefetch_items_total{result="error"}`)
+			case !d.Available:
 				res.Descriptor = d
+				r.m.Inc(`prefetch_items_total{result="unavailable"}`)
+			default:
+				res.Descriptor = d
+				r.m.Inc(`prefetch_items_total{result="ok"}`)
 			}
 			out[i] = res
 		}(i, id)

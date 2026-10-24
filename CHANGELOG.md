@@ -12,6 +12,25 @@ release notes.
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-10-24
+
+### Added
+
+- yt-dlp now runs on your device for Deep Search and Deep Search songs, so YouTube blocking Swar's server no longer stops them. Linux, Windows and macOS use the official yt-dlp program; Android runs it with a small built-in Python. The server is still used when yt-dlp isn't on the device.
+- Swar doesn't ship with yt-dlp: the first launch downloads it, checks it against the release's checksums before running it, and it then updates itself in the background about once a day, removing the old version once the new one works. If updating fails for two days, a popup downloads it before you continue.
+- Library settings: "Prepare the next song", "Data saver", and yt-dlp's version with an "Update now" button.
+
+### Changed
+
+- The next song is prepared while the current one plays (its stream on your device, its cover art, and the server for catalog songs), so skipping starts at once. With shuffle, the next song is chosen ahead so the prepared one is the one that plays.
+- Deep Search remembers recent searches (also across restarts) and shows them at once while refreshing in the background.
+- Server: repeated or simultaneous Deep Searches and song lookups share one yt-dlp run and are cached; work nobody is waiting for any more is stopped; prefetching never takes capacity from someone listening; yt-dlp processes are stopped cleanly on shutdown. New `GET /v1/search/deep/status` and timing metrics.
+
+### Fixed
+
+- Skipping quickly through several songs could let a slow earlier song start playing over the one you picked.
+- A song whose saved YouTube link had expired could fail to play instead of fetching a fresh link.
+
 ## [1.2.6] - 2026-10-22
 
 ### Changed

@@ -115,6 +115,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	// Catalog.
 	mux.HandleFunc("GET /v1/search", s.handleSearch)
 	mux.HandleFunc("POST /v1/search/deep", s.handleDeepSearch)
+	mux.HandleFunc("GET /v1/search/deep/status", s.handleDeepSearchStatus)
 	mux.HandleFunc("GET /v1/tracks", s.handleTracks)
 	mux.HandleFunc("GET /v1/tracks/{id}", s.handleTrack)
 	mux.HandleFunc("GET /v1/tracks/{id}/related", s.handleRelated)

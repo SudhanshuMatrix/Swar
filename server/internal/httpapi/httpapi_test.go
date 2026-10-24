@@ -426,3 +426,29 @@ func TestHealthAndMetrics(t *testing.T) {
 		t.Fatalf("metrics: %s", b)
 	}
 }
+
+// The app ran yt-dlp on the device: the server must not start it, still
+// validate the query, and answer with the catalog part only.
+func TestDeepSearchWithoutYouTubeAndStatus(t *testing.T) {
+	out, _ := json.Marshal(map[string]any{"entries": []any{map[string]any{"id": "AAAAAAAAAAA", "title": "Rare Song"}}})
+	e := newEnv(t, setup{deepOut: out})
+	code, body := e.do(t, "POST", "/v1/search/deep", "", map[string]any{"query": "rare song", "youtube": false})
+	if code != 200 {
+		t.Fatalf("catalog-only deep search: %d %v", code, body)
+	}
+	if *e.deep != nil || strings.Contains(mustJSON(body), "yt:AAAAAAAAAAA") {
+		t.Fatalf("yt-dlp must not run when the device searched YouTube: args=%v body=%v", *e.deep, body)
+	}
+	if code, _ := e.do(t, "POST", "/v1/search/deep", "", map[string]any{"query": "file:///etc/passwd", "youtube": false}); code != 400 {
+		t.Fatalf("validation must still apply: %d", code)
+	}
+	code, body = e.do(t, "GET", "/v1/search/deep/status", "", nil)
+	if code != 200 || strings.Contains(mustJSON(body), "/") && strings.Contains(mustJSON(body), "bin") {
+		t.Fatalf("status: %d %v", code, body)
+	}
+	disabled := newEnv(t, setup{env: map[string]string{"PREFETCH_ENABLED": "false"}})
+	code, body = disabled.do(t, "POST", "/v1/playback/prefetch", "", map[string]any{"trackIds": []string{"saavn:s1"}})
+	if code != 200 || !strings.Contains(mustJSON(body), `"disabled":true`) {
+		t.Fatalf("prefetch switched off: %d %v", code, body)
+	}
+}

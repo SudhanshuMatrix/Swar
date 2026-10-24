@@ -109,9 +109,10 @@ the run page in the Actions tab.
 - **Catalog.** Searches, artists, playlists and most songs come from the
   Saavn catalog through the server.
 - **Deep Search.** When a song is not in the catalog, Deep Search looks it up
-  with yt-dlp. The server streams the audio to the app itself, so it plays the
-  same way on every platform. When a video is blocked or age restricted, the
-  server tries another public upload of the same song.
+  with yt-dlp **on your device** (YouTube often blocks servers), while the
+  server searches the other music catalogs. The app downloads yt-dlp on first
+  launch, verifies its checksum and keeps it updated in the background; the
+  server's own yt-dlp is the fallback. See [docs/DEEP_SEARCH.md](docs/DEEP_SEARCH.md).
 - **Playback.** The app uses just_audio with audio_service for background
   playback, and libmpv on Linux.
 - **Storage.** The library, playlists and settings live on the device in
@@ -127,7 +128,8 @@ use it by default.
 
 - Flutter, stable channel (CI uses the latest stable)
 - Go 1.24 or newer, for the server
-- Python 3 and yt-dlp, for Deep Search: `pip install -U "yt-dlp[default]"`
+- Python 3 and yt-dlp, for the server's fallback Deep Search: `pip install -U "yt-dlp[default]"`.
+  The app downloads its own yt-dlp; nothing to install on devices.
 
 ### The app
 

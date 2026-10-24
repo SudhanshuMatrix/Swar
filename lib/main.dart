@@ -10,10 +10,13 @@ import 'app.dart';
 import 'core/constants.dart';
 import 'core/errors.dart';
 import 'services/api_service.dart';
+import 'services/app_settings.dart';
 import 'services/audio_handler.dart';
+import 'services/deep_search_service.dart';
 import 'services/download_service.dart';
 import 'services/jam_service.dart';
 import 'services/library_service.dart';
+import 'services/ytdlp/device_ytdlp.dart';
 import 'state/library_provider.dart';
 import 'state/player_provider.dart';
 
@@ -28,6 +31,12 @@ Future<void> main() async {
   // just_audio has no built-in Linux/Windows player; media_kit provides one.
   if (!kIsWeb) JustAudioMediaKit.ensureInitialized(linux: true, windows: true);
   await LibraryService.instance.init();
+  await AppSettings.instance.init();
+  // yt-dlp on this device: checks what is installed (no network). The
+  // first launch downloads it (YtDlpGate); updates then run in the
+  // background.
+  await DeviceYtDlp.instance.init();
+  DeviceYtDlp.instance.startBackgroundUpdates();
 
   // audio_service wires OS-level lock-screen/notification media controls on
   // Android & iOS, which is what keeps audio playing when the screen closes.
@@ -83,6 +92,9 @@ Future<void> main() async {
     MultiProvider(
       providers: [
         Provider<ApiService>.value(value: api),
+        Provider<DeepSearchService>.value(value: DeepSearchService(api)),
+        ChangeNotifierProvider.value(value: AppSettings.instance),
+        ChangeNotifierProvider.value(value: DeviceYtDlp.instance),
         ChangeNotifierProvider.value(value: player),
         ChangeNotifierProvider.value(value: downloads),
         ChangeNotifierProvider.value(value: jam),

@@ -44,7 +44,8 @@ Endpoints marked 🔒 below need a token.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/v1/search?q=&type=all\|songs\|albums\|artists\|playlists&page=0&limit=10` | Unified search. Songs are de-duplicated (same ID, or same title + artists within ±2 s). `partial: true` with `errors` when some sections failed. With `type=artists`, each artist carries `songCount`; artists with no songs are dropped and the rest are sorted by song count |
-| POST | `/v1/search/deep` | `{"query": "text or YouTube link", "limit": 10}`. User-triggered only. Returns `{results: [{...track, source, confidence: "metadata_only"}], notice}` |
+| POST | `/v1/search/deep` | `{"query": "text or YouTube link", "limit": 10, "youtube": true}`. User-triggered only. Returns `{results: [{...track, source, confidence: "metadata_only"}], notice}`. `"youtube": false` searches only the music catalogs (the app ran yt-dlp on the device); the query is validated the same way and yt-dlp does not run. YouTube results are cached per normalized query and limit (`DEEPSEARCH_SEARCH_TTL`). |
+| GET | `/v1/search/deep/status` | `{enabled, youtube: {playback, downloads, available, version, reason, running, capacity}}`. Whether yt-dlp works on the server and how busy it is; never paths or error text. The version check runs at most every 10 minutes. |
 | GET | `/v1/tracks?ids=a,b,c` | Batch, max 100 |
 | GET | `/v1/tracks/{id}` | |
 | GET | `/v1/tracks/{id}/related` | Provider-related tracks |

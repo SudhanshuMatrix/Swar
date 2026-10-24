@@ -72,6 +72,12 @@ type Config struct {
 	// playable stream. Off by default: see docs/DECISIONS.md.
 	DeepSearchPlayback  bool
 	DeepSearchDownloads bool
+	// DeepSearchSearchTTL is how long YouTube Deep Search results are
+	// reused; DeepSearchCacheEntries bounds how many queries are kept.
+	DeepSearchSearchTTL    time.Duration
+	DeepSearchCacheEntries int
+	// PrefetchEnabled lets clients ask the server to prepare the next song.
+	PrefetchEnabled bool
 
 	JamMaxParticipants int
 	JamMaxQueue        int
@@ -142,14 +148,17 @@ func LoadFrom(getenv func(string) string) (*Config, error) {
 		MusicSearchTimeout:  e.dur("MUSIC_SEARCH_TIMEOUT", 8*time.Second),
 		MusicMaxConcurrency: e.int("MUSIC_MAX_CONCURRENCY", 10),
 
-		YTDLPPath:             e.str("YTDLP_PATH", "yt-dlp"),
-		DeepSearchEnabled:     e.bool("DEEPSEARCH_ENABLED", true),
-		DeepSearchTimeout:     e.dur("DEEPSEARCH_TIMEOUT", 25*time.Second),
-		DeepSearchMaxResults:  e.int("DEEPSEARCH_MAX_RESULTS", 10),
-		DeepSearchConcurrency: e.int("DEEPSEARCH_CONCURRENCY", 2),
-		DeepSearchMaxOutput:   e.int64("DEEPSEARCH_MAX_OUTPUT_BYTES", 8<<20),
-		DeepSearchPlayback:    e.bool("DEEPSEARCH_PLAYBACK_ENABLED", false),
-		DeepSearchDownloads:   e.bool("DEEPSEARCH_DOWNLOADS_ENABLED", false),
+		YTDLPPath:              e.str("YTDLP_PATH", "yt-dlp"),
+		DeepSearchEnabled:      e.bool("DEEPSEARCH_ENABLED", true),
+		DeepSearchTimeout:      e.dur("DEEPSEARCH_TIMEOUT", 25*time.Second),
+		DeepSearchMaxResults:   e.int("DEEPSEARCH_MAX_RESULTS", 10),
+		DeepSearchConcurrency:  e.int("DEEPSEARCH_CONCURRENCY", 2),
+		DeepSearchMaxOutput:    e.int64("DEEPSEARCH_MAX_OUTPUT_BYTES", 8<<20),
+		DeepSearchPlayback:     e.bool("DEEPSEARCH_PLAYBACK_ENABLED", false),
+		DeepSearchDownloads:    e.bool("DEEPSEARCH_DOWNLOADS_ENABLED", false),
+		DeepSearchSearchTTL:    e.dur("DEEPSEARCH_SEARCH_TTL", 30*time.Minute),
+		DeepSearchCacheEntries: e.int("DEEPSEARCH_CACHE_ENTRIES", 500),
+		PrefetchEnabled:        e.bool("PREFETCH_ENABLED", true),
 
 		JamMaxParticipants: e.int("JAM_MAX_PARTICIPANTS", 20),
 		JamMaxQueue:        e.int("JAM_MAX_QUEUE", 200),
@@ -208,6 +217,8 @@ func (c *Config) validate() error {
 	check(c.MusicMaxConcurrency >= 1 && c.MusicMaxConcurrency <= 64, "MUSIC_MAX_CONCURRENCY must be 1-64")
 	check(c.DeepSearchMaxResults >= 1 && c.DeepSearchMaxResults <= 25, "DEEPSEARCH_MAX_RESULTS must be 1-25")
 	check(c.DeepSearchConcurrency >= 1 && c.DeepSearchConcurrency <= 8, "DEEPSEARCH_CONCURRENCY must be 1-8")
+	check(c.DeepSearchSearchTTL >= 0 && c.DeepSearchSearchTTL <= 24*time.Hour, "DEEPSEARCH_SEARCH_TTL must be 0-24h")
+	check(c.DeepSearchCacheEntries >= 10 && c.DeepSearchCacheEntries <= 100000, "DEEPSEARCH_CACHE_ENTRIES must be 10-100000")
 	check(c.JamMaxParticipants >= 2 && c.JamMaxParticipants <= 100, "JAM_MAX_PARTICIPANTS must be 2-100")
 	check(c.JamMaxQueue >= 10 && c.JamMaxQueue <= 1000, "JAM_MAX_QUEUE must be 10-1000")
 	return errors.Join(errs...)

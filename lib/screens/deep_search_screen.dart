@@ -5,15 +5,17 @@ import '../core/app_icons.dart';
 import '../core/errors.dart';
 import '../core/theme.dart';
 import '../models/track.dart';
-import '../services/api_service.dart';
+import '../services/deep_search_service.dart';
+import '../services/ytdlp/device_ytdlp.dart';
 import '../state/player_provider.dart';
 import '../widgets/track_actions.dart';
 import '../widgets/track_tile.dart';
 
-/// Results of a user-triggered Deep Search (yt-dlp on the server).
+/// Results of a user-triggered Deep Search: yt-dlp on this device for
+/// YouTube, plus the server's search of the other music catalogs.
 ///
-/// Deep Search only runs when the user taps the button: it is slower and
-/// costs the server more than normal search.
+/// Deep Search only runs when the user asks for it: it is slower than
+/// normal search. Repeated searches come from the cache.
 class DeepSearchScreen extends StatefulWidget {
   final String query;
   const DeepSearchScreen({super.key, required this.query});
@@ -30,6 +32,9 @@ class _DeepSearchScreenState extends State<DeepSearchScreen> {
   bool _searched = false;
   String? _error;
 
+  /// The search the screen shows; older answers are ignored.
+  int _searchId = 0;
+
   @override
   void initState() {
     super.initState();
@@ -44,26 +49,32 @@ class _DeepSearchScreenState extends State<DeepSearchScreen> {
 
   Future<void> _run() async {
     final q = _controller.text.trim();
-    if (q.isEmpty || _loading) return;
+    if (q.isEmpty) return;
+    final id = ++_searchId;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final res = await context.read<ApiService>().deepSearch(q);
-      if (!mounted) return;
-      setState(() {
-        _results = res.tracks;
-        _notice = res.notice;
-        _searched = true;
+      final hit = await context.read<DeepSearchService>().search(q, onRefreshed: (res) {
+        // A background refresh of what is on screen.
+        if (mounted && id == _searchId) setState(() => _show(res.tracks, res.notice));
       });
+      if (!mounted || id != _searchId) return;
+      setState(() => _show(hit.value.tracks, hit.value.notice));
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || id != _searchId) return;
       setState(() => _error = friendlyError(e));
       ErrorPopup.show(e, title: 'Deep Search failed', onRetry: _run);
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && id == _searchId) setState(() => _loading = false);
     }
+  }
+
+  void _show(List<Track> tracks, String notice) {
+    _results = tracks;
+    _notice = notice;
+    _searched = true;
   }
 
   @override
@@ -89,6 +100,14 @@ class _DeepSearchScreenState extends State<DeepSearchScreen> {
               ),
             ),
           ),
+          if (DeviceYtDlp.supported && !context.watch<DeviceYtDlp>().installed)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Text(
+                "yt-dlp isn't on this device yet, so YouTube is searched by the server, which YouTube sometimes blocks.",
+                style: TextStyle(color: SonivoColors.textMuted, fontSize: 12),
+              ),
+            ),
           if (_loading) const LinearProgressIndicator(color: SonivoColors.accent),
           if (_loading)
             const Padding(

@@ -29,8 +29,18 @@ android {
         versionName = flutter.versionName
     }
 
+    // youtubedl-android runs Python from its native libraries, which must be
+    // extracted to disk (the library's documented requirement).
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     buildTypes {
         release {
+            // The library is reached by reflection in places; keep it.
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "../../packaging/android/proguard-ytdlp.pro")
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
@@ -46,4 +56,11 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Python for running yt-dlp on the phone. yt-dlp itself is not bundled:
+    // the app downloads and verifies it (lib/services/ytdlp/), and the copy
+    // inside this library is stripped from release builds (res/raw/keep.xml).
+    implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
 }

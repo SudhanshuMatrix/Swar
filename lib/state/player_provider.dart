@@ -1,19 +1,29 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:audio_service/audio_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show ScaffoldMessenger, SnackBar, Text;
+import 'package:flutter/widgets.dart' show precacheImage;
 
 import '../core/errors.dart';
 import '../models/track.dart';
 import '../services/api_service.dart';
+import '../services/app_settings.dart';
 import '../services/audio_handler.dart';
 import '../services/download_service.dart';
 import '../services/jam_service.dart';
 import '../services/library_service.dart';
+import '../services/prefetch_planner.dart';
 import '../services/youtube_audio.dart';
 
 enum PlaybackRepeatMode { off, all, one }
+
+/// A newer load took over; the older one stops quietly.
+class _Superseded implements Exception {
+  const _Superseded();
+}
 
 /// Owns the queue and drives playback.
 ///
@@ -98,6 +108,16 @@ class PlayerProvider extends ChangeNotifier {
   // Restored from the last session: the song shows, and loads on first play.
   bool _needsLoad = false;
   Duration _resumeAt = Duration.zero;
+
+  // Each load gets a number; a slow load that finishes after the listener
+  // moved on must not replace the newer song.
+  int _loadGen = 0;
+  // Bumped when the queue changes, so preparation for an old order stops.
+  int _prefetchGen = 0;
+  // With shuffle, the song that plays next is picked in advance so the one
+  // being prepared is the one that plays.
+  int? _shuffleNext;
+  final _random = math.Random();
 
   // Sleep timer.
   Timer? _sleepTimer;
@@ -225,7 +245,14 @@ class PlayerProvider extends ChangeNotifier {
   void addToQueue(Track track) {
     _queue.add(track);
     _saveSession();
+    _queueChanged();
     notifyListeners();
+  }
+
+  /// The queue's order or contents changed: prepare what now comes next.
+  void _queueChanged() {
+    if (_shuffleNext != null && (_shuffleNext! >= _queue.length || _shuffleNext == _queueIndex)) _shuffleNext = null;
+    if (currentTrack != null && !_needsLoad && !_loading) _prefetchUpcoming();
   }
 
   void playNext(Track track) {
@@ -235,6 +262,8 @@ class PlayerProvider extends ChangeNotifier {
     }
     _queue.insert(_queueIndex + 1, track);
     _saveSession();
+    _shuffleNext = null;
+    _queueChanged();
     notifyListeners();
   }
 
@@ -254,6 +283,8 @@ class PlayerProvider extends ChangeNotifier {
     } else {
       _queue.removeAt(index);
       if (index < _queueIndex) _queueIndex--;
+      _shuffleNext = null;
+      _queueChanged();
       notifyListeners();
     }
   }
@@ -281,6 +312,8 @@ class PlayerProvider extends ChangeNotifier {
       _queueIndex++;
     }
     _saveSession();
+    _shuffleNext = null;
+    _queueChanged();
     notifyListeners();
   }
 
@@ -295,6 +328,8 @@ class PlayerProvider extends ChangeNotifier {
       _queueIndex = -1;
     }
     _saveSession();
+    _shuffleNext = null;
+    _prefetchGen++; // nothing left to prepare
     notifyListeners();
   }
 
@@ -309,6 +344,9 @@ class PlayerProvider extends ChangeNotifier {
   Future<void> _loadCurrent({required bool autoplay, Duration startAt = Duration.zero}) async {
     final track = currentTrack;
     if (track == null) return;
+    final gen = ++_loadGen;
+    _prefetchGen++; // what was being prepared may no longer come next
+    _shuffleNext = null;
     _needsLoad = false;
     _closePlay();
     _loading = true;
@@ -322,10 +360,11 @@ class PlayerProvider extends ChangeNotifier {
       if (local != null) {
         await audioHandler.loadUrl(Uri.file(local).toString(), _mediaItem(track), startAt: start);
       } else if (track.isDeepSearchResult && YouTubeAudio.supported) {
-        streamUrl = await _loadFromYouTube(track, start);
+        streamUrl = await _loadFromYouTube(track, start, gen);
       } else {
-        streamUrl = await _loadCatalogSong(track, start);
+        streamUrl = await _loadCatalogSong(track, start, gen);
       }
+      _check(gen);
       if (start != null) _position = start;
       if (autoplay) await audioHandler.play();
       _playingId = track.id;
@@ -338,15 +377,24 @@ class PlayerProvider extends ChangeNotifier {
       _lastSavedPosition = _position;
       _saveSession();
       onTrackStarted?.call();
+    } on _Superseded {
+      return;
     } catch (err) {
+      if (gen != _loadGen) return; // the listener already moved on
       // A Deep Search song that won't load: show the server's reason.
       final e = (err is! ApiException && streamUrl != null ? await api.relayProblem(streamUrl) : null) ?? err;
       _errorMessage = 'Could not play "${track.title}". ${friendlyError(e)}';
       ErrorPopup.show(e, title: 'Couldn\'t play "${track.title}"', onRetry: () => _loadCurrent(autoplay: true));
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (gen == _loadGen) {
+        _loading = false;
+        notifyListeners();
+      }
     }
+  }
+
+  void _check(int gen) {
+    if (gen != _loadGen) throw const _Superseded();
   }
 
   /// JioSaavn songs play straight from the server's URL. Deep Search catalog
@@ -355,7 +403,7 @@ class PlayerProvider extends ChangeNotifier {
   /// video the server matched, or else one found by searching YouTube here.
   /// The web can't reach YouTube, so it uses the server's relay. The
   /// preview is the last resort. Returns the server URL when one was used.
-  Future<String?> _loadCatalogSong(Track track, Duration? start) async {
+  Future<String?> _loadCatalogSong(Track track, Duration? start, int gen) async {
     StreamResult? stream;
     Object? serverError;
     try {
@@ -363,6 +411,7 @@ class PlayerProvider extends ChangeNotifier {
     } catch (err) {
       serverError = err;
     }
+    _check(gen);
     final item = _mediaItem(stream?.track ?? track);
     // JioSaavn gives the full song directly.
     if (stream != null && stream.url.isNotEmpty && !stream.isPreview) {
@@ -374,9 +423,13 @@ class PlayerProvider extends ChangeNotifier {
       try {
         ytId ??= await YouTubeAudio.findVideoId(track.title, track.artist, track.duration);
         if (ytId != null) {
-          await audioHandler.loadUrl(await YouTubeAudio.streamUrl(ytId), item, startAt: start);
+          final s = await YouTubeAudio.resolve(ytId);
+          _check(gen);
+          await audioHandler.loadUrl(s.url, item, startAt: start, headers: s.headers);
           return null;
         }
+      } on _Superseded {
+        rethrow;
       } catch (err) {
         debugPrint('Swar: full song from YouTube failed for ${track.id} ($ytId): $err');
         if (ytId != null) YouTubeAudio.forget(ytId);
@@ -384,6 +437,7 @@ class PlayerProvider extends ChangeNotifier {
     } else if (ytId != null) {
       try {
         final relay = await api.resolveAudio('yt:$ytId');
+        _check(gen);
         await audioHandler.loadUrl(relay.url, item, startAt: start);
         return relay.url;
       } catch (err) {
@@ -391,6 +445,7 @@ class PlayerProvider extends ChangeNotifier {
       }
     }
     if (stream != null && stream.url.isNotEmpty) {
+      _check(gen);
       await audioHandler.loadUrl(stream.url, item, startAt: start);
       if (stream.isPreview) {
         _showNotice(
@@ -407,25 +462,37 @@ class PlayerProvider extends ChangeNotifier {
     ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(SnackBar(content: Text(message)));
   }
 
-  /// Plays a Deep Search song from YouTube on this device. If YouTube won't
-  /// give it to this device, the server's relay gets one try; when that
-  /// fails too, the device's reason is the one worth showing. Returns the
-  /// relay URL when the relay was used.
-  Future<String?> _loadFromYouTube(Track track, Duration? start) async {
-    Object deviceError;
-    try {
-      final url = await YouTubeAudio.streamUrl(track.id);
-      await audioHandler.loadUrl(url, _mediaItem(track), startAt: start);
-      return null;
-    } catch (err) {
-      debugPrint('Swar: YouTube on this device failed for ${track.id}: $err');
-      YouTubeAudio.forget(track.id);
-      deviceError = err;
+  /// Plays a Deep Search song from YouTube on this device: yt-dlp on the
+  /// device or youtube_explode (see [YouTubeAudio]). A cached URL that
+  /// fails to load (it expired or was revoked early) is resolved again
+  /// once. Only when the device can't get the song does the server's relay
+  /// get one try; when that fails too, the device's reason is the one worth
+  /// showing. Returns the relay URL when the relay was used.
+  Future<String?> _loadFromYouTube(Track track, Duration? start, int gen) async {
+    Object? deviceError;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final fromCache = attempt == 0 && YouTubeAudio.cached(track.id) != null;
+      try {
+        final s = await YouTubeAudio.resolve(track.id, fresh: attempt > 0);
+        _check(gen);
+        await audioHandler.loadUrl(s.url, _mediaItem(track), startAt: start, headers: s.headers);
+        return null;
+      } on _Superseded {
+        rethrow;
+      } catch (err) {
+        debugPrint('Swar: YouTube on this device failed for ${track.id}: $err');
+        YouTubeAudio.forget(track.id);
+        deviceError = err;
+        if (!fromCache) break;
+      }
     }
     try {
       final stream = await api.resolveAudio(track.id);
+      _check(gen);
       await audioHandler.loadUrl(stream.url, _mediaItem(stream.track), startAt: start);
       return stream.url;
+    } on _Superseded {
+      rethrow;
     } catch (_) {
       throw deviceError is YouTubeAudioException
           ? deviceError
@@ -466,23 +533,64 @@ class PlayerProvider extends ChangeNotifier {
 
   void toggleShuffle() {
     _shuffle = !_shuffle;
+    _shuffleNext = null;
+    _queueChanged();
     notifyListeners();
   }
 
   void cycleRepeat() {
     _repeat = PlaybackRepeatMode.values[(_repeat.index + 1) % PlaybackRepeatMode.values.length];
+    _queueChanged();
     notifyListeners();
   }
 
-  /// Asks the server to resolve the next one or two tracks ahead of time
-  /// so skipping is instant. Downloaded tracks need no prefetch.
+  /// A random queue position other than the current one.
+  int _randomOther() {
+    if (_queue.length < 2) return _queueIndex;
+    var i = _random.nextInt(_queue.length - 1);
+    if (i >= _queueIndex) i++;
+    return i;
+  }
+
+  /// Prepares what plays next so skipping is instant (see
+  /// [upcomingIndexes]): the next Deep Search song's stream is resolved on
+  /// this device, artwork is cached (not in data saver), and the server is
+  /// asked to prepare the songs it plays itself. Work for a queue that has
+  /// changed since is dropped. Downloaded songs need nothing.
   void _prefetchUpcoming() {
-    final upcoming = <String>[];
-    for (var i = _queueIndex + 1; i < _queue.length && upcoming.length < 2; i++) {
-      final id = _queue[i].id;
-      if (downloads?.localFileFor(id) == null) upcoming.add(id);
-    }
-    api.prefetch(upcoming).catchError((_) {});
+    final gen = ++_prefetchGen;
+    final settings = AppSettings.instance;
+    if (_shuffle && _queue.length > 1) _shuffleNext ??= _randomOther();
+    final indexes = upcomingIndexes(
+      length: _queue.length,
+      current: _queueIndex,
+      count: settings.prefetchCount,
+      shuffleNext: _shuffle ? _shuffleNext : null,
+      repeatAll: _repeat == PlaybackRepeatMode.all,
+    );
+    final tracks = [
+      for (final i in indexes)
+        if (downloads?.localFileFor(_queue[i].id) == null) _queue[i],
+    ];
+    if (tracks.isEmpty) return;
+    bool onDevice(Track t) => t.isDeepSearchResult && YouTubeAudio.supported;
+    final serverIds = [for (final t in tracks) if (!onDevice(t)) t.id];
+    if (serverIds.isNotEmpty) api.prefetch(serverIds, dataSaver: settings.dataSaver).catchError((_) {});
+    // Give the current song's start a head start, then prepare the very
+    // next song (only it: a YouTube resolve is the expensive part).
+    Timer(const Duration(seconds: 3), () async {
+      if (gen != _prefetchGen) return;
+      final next = tracks.first;
+      if (onDevice(next)) await YouTubeAudio.prefetch(next.id);
+      if (gen != _prefetchGen || settings.dataSaver) return;
+      final ctx = ErrorPopup.navigatorKey.currentContext;
+      if (ctx == null || !ctx.mounted) return;
+      for (final t in tracks) {
+        if (t.thumbnailUrl.isNotEmpty) {
+          precacheImage(CachedNetworkImageProvider(t.thumbnailUrl), ctx).catchError((_) {});
+        }
+      }
+    });
   }
 
   /// Starts a radio station seeded by [track] and plays it.
@@ -551,11 +659,9 @@ class PlayerProvider extends ChangeNotifier {
   Future<void> next() async {
     if (_queue.isEmpty) return;
     if (_shuffle && _queue.length > 1) {
-      int candidate;
-      do {
-        candidate = DateTime.now().microsecondsSinceEpoch % _queue.length;
-      } while (candidate == _queueIndex);
-      _queueIndex = candidate;
+      // The song picked (and prepared) in advance, if it is still valid.
+      final picked = _shuffleNext;
+      _queueIndex = picked != null && picked < _queue.length && picked != _queueIndex ? picked : _randomOther();
     } else {
       final atEnd = _queueIndex + 1 >= _queue.length;
       if (atEnd) {

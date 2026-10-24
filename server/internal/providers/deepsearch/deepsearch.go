@@ -13,6 +13,16 @@
 //     --skip-download: no media is downloaded.
 //   - Resolving a candidate into a playable stream is a separate operation
 //     that is disabled unless the operator enables it.
+//
+// Performance rules:
+//   - Identical concurrent searches and resolves share one yt-dlp process,
+//     and that process is stopped when every caller waiting for it leaves.
+//   - Search results are cached per normalized query and limit. Errors,
+//     timeouts and refusals are never cached.
+//   - Background work (prefetching) never waits for a slot and leaves one
+//     slot free for searches and playback a listener is waiting for.
+//   - Close stops every running process (its whole process group where the
+//     platform has one) and refuses new work.
 package deepsearch
 
 import (
@@ -29,8 +39,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"swar/internal/cache"
 	"swar/internal/catalog"
 	"swar/internal/observability"
 )
@@ -40,7 +52,11 @@ import (
 type Runner func(ctx context.Context, args []string, maxOut int64) ([]byte, error)
 
 type Options struct {
-	Binary      string
+	Binary string
+	// BinaryPath, when set, is asked for the executable before each run
+	// (a managed, verified install that may change after an update). It
+	// wins over Binary when it returns a non-empty path.
+	BinaryPath  func() string
 	Timeout     time.Duration
 	MaxResults  int
 	Concurrency int
@@ -49,6 +65,14 @@ type Options struct {
 	Downloads   bool // operator asserts offline copies are permitted
 	Runner      Runner
 	Metrics     *observability.Metrics
+
+	// SearchTTL is how long search results are reused; 0 disables the
+	// result cache (identical concurrent searches are still shared).
+	SearchTTL time.Duration
+	// Cache holds search results. When nil and SearchTTL > 0, the service
+	// keeps its own cache of CacheEntries queries.
+	Cache        *cache.Cache
+	CacheEntries int
 }
 
 type Service struct {
@@ -56,6 +80,26 @@ type Service struct {
 	sem chan struct{}
 	run Runner
 	m   *observability.Metrics
+
+	cache   *cache.Cache
+	flights cache.Group
+
+	// Background work takes a slot only under bgMu, so two prefetches
+	// cannot both take the slot kept free for listeners.
+	bgMu    sync.Mutex
+	waiting atomic.Int32 // foreground callers waiting for a slot
+
+	// Lifetime: Close cancels base, which stops every run.
+	base    context.Context
+	stop    context.CancelFunc
+	closed  atomic.Bool
+	running sync.WaitGroup
+	active  atomic.Int32
+
+	versionMu  sync.Mutex
+	version    string
+	versionErr error
+	versionAt  time.Time
 
 	// Title and artist of recently seen videos, so a video that cannot be
 	// played can be swapped for another public upload of the same song.
@@ -97,11 +141,73 @@ func New(o Options) *Service {
 	if o.Timeout <= 0 {
 		o.Timeout = 25 * time.Second
 	}
+	if o.CacheEntries < 1 {
+		o.CacheEntries = 500
+	}
 	s := &Service{opt: o, sem: make(chan struct{}, o.Concurrency), run: o.Runner, m: o.Metrics}
+	s.base, s.stop = context.WithCancel(context.Background())
 	if s.run == nil {
-		s.run = execRunner(o.Binary)
+		s.run = execRunner(s.binary, o.Metrics)
+	}
+	if o.SearchTTL > 0 {
+		s.cache = o.Cache
+		if s.cache == nil {
+			s.cache = cache.New(o.CacheEntries)
+		}
 	}
 	return s
+}
+
+// binary is the executable to run: the managed install when there is one,
+// otherwise the configured name or path.
+func (s *Service) binary() string {
+	if s.opt.BinaryPath != nil {
+		if p := s.opt.BinaryPath(); p != "" {
+			return p
+		}
+	}
+	if s.opt.Binary == "" {
+		return "yt-dlp"
+	}
+	return s.opt.Binary
+}
+
+// Close stops every running yt-dlp process, refuses new work and waits up
+// to wait for the processes to exit. It is safe to call more than once.
+func (s *Service) Close(wait time.Duration) {
+	s.closed.Store(true)
+	s.stop()
+	done := make(chan struct{})
+	go func() {
+		s.running.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(wait):
+	}
+}
+
+// exec runs yt-dlp once: tied to the service's lifetime, counted, timed.
+func (s *Service) exec(ctx context.Context, args []string, maxOut int64) ([]byte, error) {
+	if s.closed.Load() {
+		return nil, catalog.Unavailable("Deep Search is shutting down")
+	}
+	s.running.Add(1)
+	defer s.running.Done()
+	s.active.Add(1)
+	defer s.active.Add(-1)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stop := context.AfterFunc(s.base, cancel)
+	defer stop()
+	start := time.Now()
+	out, err := s.run(ctx, args, maxOut)
+	s.m.Observe("ytdlp_run", time.Since(start))
+	if err != nil && s.closed.Load() {
+		return nil, catalog.NewError(catalog.KindUnavailable, "Deep Search is shutting down", err)
+	}
+	return out, err
 }
 
 // Candidate is one deep-search result. Finding a candidate says nothing
@@ -145,16 +251,70 @@ func ParseInput(in string) (query, videoID string, err error) {
 
 func watchURL(id string) string { return "https://www.youtube.com/watch?v=" + id }
 
+// acquire takes a yt-dlp slot. Listeners wait for one (until their ctx
+// ends). Background work never waits: it only starts when a slot is free,
+// no listener is waiting, and (with more than one slot) one slot stays free.
 func (s *Service) acquire(ctx context.Context) (func(), error) {
+	release := func() { <-s.sem }
+	if catalog.IsBackground(ctx) {
+		s.bgMu.Lock()
+		defer s.bgMu.Unlock()
+		reserve := 0
+		if cap(s.sem) > 1 {
+			reserve = 1
+		}
+		if s.waiting.Load() == 0 && len(s.sem) < cap(s.sem)-reserve {
+			select {
+			case s.sem <- struct{}{}:
+				return release, nil
+			default:
+			}
+		}
+		s.m.Inc("deepsearch_background_refused_total")
+		return nil, catalog.NewError(catalog.KindRateLimited, "Deep Search is busy with listeners' requests", catalog.ErrBackgroundBusy)
+	}
+	s.waiting.Add(1)
+	defer s.waiting.Add(-1)
 	select {
 	case s.sem <- struct{}{}:
-		return func() { <-s.sem }, nil
+		return release, nil
 	case <-ctx.Done():
-		return nil, catalog.NewError(catalog.KindRateLimited, "Deep Search is busy; try again in a moment", ctx.Err())
+		return nil, busy(ctx.Err())
 	}
 }
 
+func busy(cause error) error {
+	return catalog.NewError(catalog.KindRateLimited, "Deep Search is busy; try again in a moment", cause)
+}
+
+// shared runs fn once for every concurrent caller of key. A caller whose
+// ctx ends while waiting gets a "busy" error; the work stops when nobody
+// is left waiting for it.
+func shared[T any](ctx context.Context, s *Service, key string, fn func(context.Context) (T, error)) (T, error) {
+	v, err := cache.Do(ctx, &s.flights, key, s.sharedTimeout(), fn)
+	return v, s.callerErr(ctx, err)
+}
+
+// sharedTimeout bounds shared work: time to wait for a slot plus a run
+// (and, for resolves, the fallback search and a few alternative runs).
+func (s *Service) sharedTimeout() time.Duration { return 4*s.opt.Timeout + 5*time.Second }
+
+func (s *Service) callerErr(ctx context.Context, err error) error {
+	if err != nil && ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+		return busy(err)
+	}
+	return err
+}
+
+// SearchKey is the cache key for a search: the provider namespace, the
+// normalized target (case and whitespace folded) and the limit.
+func SearchKey(target string, limit int) string {
+	return fmt.Sprintf("deepsearch:yt:search:%s|%d", strings.ToLower(strings.Join(strings.Fields(target), " ")), limit)
+}
+
 // Search returns up to limit metadata candidates. It never downloads media.
+// Results are cached (see Options.SearchTTL) and identical concurrent
+// searches share one yt-dlp run.
 func (s *Service) Search(ctx context.Context, input string, limit int) ([]Candidate, error) {
 	if limit < 1 || limit > s.opt.MaxResults {
 		limit = s.opt.MaxResults
@@ -163,6 +323,35 @@ func (s *Service) Search(ctx context.Context, input string, limit int) ([]Candid
 	if err != nil {
 		return nil, err
 	}
+	target := watchURL(videoID)
+	if videoID == "" {
+		target = fmt.Sprintf("ytsearch%d:%s", limit, query)
+	}
+	start := time.Now()
+	defer s.m.Since("deepsearch_search", start)
+	key := SearchKey(target, limit)
+	if s.cache == nil {
+		return shared(ctx, s, key, func(ctx context.Context) ([]Candidate, error) {
+			return s.searchRun(ctx, target, limit)
+		})
+	}
+	if _, hit := s.cache.Peek(key); hit {
+		s.m.Inc(`deepsearch_cache_total{result="hit"}`)
+	} else {
+		s.m.Inc(`deepsearch_cache_total{result="miss"}`)
+	}
+	res, err := cache.GetOrLoadShared(ctx, s.cache, &s.flights, key, s.sharedTimeout(), func(ctx context.Context) ([]Candidate, time.Duration, error) {
+		res, err := s.searchRun(ctx, target, limit)
+		return res, s.opt.SearchTTL, err
+	})
+	if err != nil {
+		return nil, s.callerErr(ctx, err)
+	}
+	// Results are shared between callers: hand each one its own slice.
+	return append([]Candidate(nil), res...), nil
+}
+
+func (s *Service) searchRun(ctx context.Context, target string, limit int) ([]Candidate, error) {
 	release, err := s.acquire(ctx)
 	if err != nil {
 		return nil, err
@@ -171,17 +360,12 @@ func (s *Service) Search(ctx context.Context, input string, limit int) ([]Candid
 	ctx, cancel := context.WithTimeout(ctx, s.opt.Timeout)
 	defer cancel()
 	s.m.Inc("deepsearch_runs_total")
-
-	target := watchURL(videoID)
-	if videoID == "" {
-		target = fmt.Sprintf("ytsearch%d:%s", limit, query)
-	}
 	args := []string{
 		"--ignore-config", "--no-warnings", "--skip-download", "--flat-playlist",
 		"--dump-single-json", "--no-playlist", "--socket-timeout", "10",
 		"--", target,
 	}
-	out, err := s.run(ctx, args, s.opt.MaxOutput)
+	out, err := s.exec(ctx, args, s.opt.MaxOutput)
 	if err != nil {
 		return nil, s.classify(ctx, err)
 	}
@@ -388,7 +572,29 @@ func replaceable(err error) bool {
 	return false
 }
 
+type resolved struct {
+	sources []catalog.MediaSource
+	until   time.Time
+}
+
+// resolveVideo extracts stream references for one video. Concurrent
+// resolves of the same video (player, relay, prefetch, download check)
+// share one run. Results are not cached here: the playback package caches
+// descriptors and knows when they expire.
 func (s *Service) resolveVideo(ctx context.Context, id string) ([]catalog.MediaSource, time.Time, error) {
+	start := time.Now()
+	defer s.m.Since("deepsearch_resolve", start)
+	r, err := shared(ctx, s, "deepsearch:yt:resolve:"+id, func(ctx context.Context) (resolved, error) {
+		srcs, until, err := s.resolveRun(ctx, id)
+		return resolved{srcs, until}, err
+	})
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	return append([]catalog.MediaSource(nil), r.sources...), r.until, nil
+}
+
+func (s *Service) resolveRun(ctx context.Context, id string) ([]catalog.MediaSource, time.Time, error) {
 	release, err := s.acquire(ctx)
 	if err != nil {
 		return nil, time.Time{}, err
@@ -409,7 +615,7 @@ func (s *Service) resolveVideo(ctx context.Context, id string) ([]catalog.MediaS
 	if limit < 32<<20 {
 		limit = 32 << 20
 	}
-	out, err := s.run(ctx, args, limit)
+	out, err := s.exec(ctx, args, limit)
 	if err != nil {
 		return nil, time.Time{}, s.classify(ctx, err)
 	}
@@ -506,6 +712,9 @@ var (
 )
 
 func (s *Service) classify(ctx context.Context, err error) error {
+	if ce := (*catalog.Error)(nil); errors.As(err, &ce) {
+		return err // already classified (shutdown)
+	}
 	switch {
 	case errors.Is(err, errNotInstalled):
 		return catalog.NewError(catalog.KindUnavailable, "Deep Search is not available on this server", err)
@@ -555,20 +764,30 @@ func (l *limitedBuffer) Write(p []byte) (int, error) {
 	return l.buf.Write(p)
 }
 
-func execRunner(binary string) Runner {
+// execRunner starts the binary directly (no shell) with an argument vector,
+// so spaces, quotes and Unicode in paths or queries are passed as is. The
+// process runs in its own process group where the platform has them, so a
+// cancelled run also stops helpers yt-dlp started.
+func execRunner(binary func() string, m *observability.Metrics) Runner {
 	return func(ctx context.Context, args []string, maxOut int64) ([]byte, error) {
-		path, err := exec.LookPath(binary)
+		path, err := exec.LookPath(binary())
 		if err != nil {
 			return nil, errNotInstalled
 		}
 		cmd := exec.CommandContext(ctx, path, args...)
 		cmd.WaitDelay = 2 * time.Second
+		killProcessGroup(cmd)
 		stdout := &limitedBuffer{max: maxOut}
 		stderr := &limitedBuffer{max: 64 << 10}
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
 		cmd.Stdin = nil
-		err = cmd.Run()
+		started := time.Now()
+		if err = cmd.Start(); err != nil {
+			return nil, &exitError{err: err, stderr: "could not start yt-dlp"}
+		}
+		m.Observe("ytdlp_start", time.Since(started))
+		err = cmd.Wait()
 		if stdout.overflow {
 			return nil, errOutputTooLarge
 		}

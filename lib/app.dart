@@ -6,6 +6,7 @@ import 'core/errors.dart';
 import 'core/theme.dart';
 import 'screens/home_shell.dart';
 import 'widgets/app_status_gate.dart';
+import 'widgets/ytdlp_gate.dart';
 
 class SonivoApp extends StatelessWidget {
   const SonivoApp({super.key});
@@ -21,7 +22,7 @@ class SonivoApp extends StatelessWidget {
       darkTheme: SonivoTheme.dark,
       themeMode: ThemeMode.dark,
       home: const HomeShell(),
-      builder: (context, child) => AppStatusGate(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => AppStatusGate(child: YtDlpGate(child: child ?? const SizedBox.shrink())),
     );
   }
 }

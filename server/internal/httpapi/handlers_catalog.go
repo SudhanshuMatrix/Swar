@@ -72,6 +72,10 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 type deepSearchRequest struct {
 	Query string `json:"query"`
 	Limit int    `json:"limit"`
+	// YouTube set to false asks for the catalog results only: the app ran
+	// yt-dlp on the device itself, so the server does not start it (and is
+	// not blocked by YouTube for it). Absent means true.
+	YouTube *bool `json:"youtube,omitempty"`
 }
 
 // handleDeepSearch is POST so it can only run from an explicit user action
@@ -87,7 +91,8 @@ func (s *Server) handleDeepSearch(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, r, err)
 		return
 	}
-	res, err := s.deepSearchAll(r.Context(), req.Query, req.Limit)
+	withYouTube := req.YouTube == nil || *req.YouTube
+	res, err := s.deepSearchAll(r.Context(), req.Query, req.Limit, withYouTube)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
@@ -105,7 +110,7 @@ func (s *Server) handleDeepSearch(w http.ResponseWriter, r *http.Request) {
 // deepSearchAll runs the YouTube search and the catalog sources main search
 // leaves out (Deezer, iTunes, MusicBrainz when Spotify is on) side by side.
 // YouTube results come first; either half failing still returns the other.
-func (s *Server) deepSearchAll(ctx context.Context, query string, limit int) ([]deepsearch.Candidate, error) {
+func (s *Server) deepSearchAll(ctx context.Context, query string, limit int, withYouTube bool) ([]deepsearch.Candidate, error) {
 	var (
 		wg            sync.WaitGroup
 		yt            []deepsearch.Candidate
@@ -113,11 +118,15 @@ func (s *Server) deepSearchAll(ctx context.Context, query string, limit int) ([]
 		catalogTracks []catalog.Track
 		catalogErr    error
 	)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		yt, ytErr = s.deep.Search(ctx, query, limit)
-	}()
+	if withYouTube {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			yt, ytErr = s.deep.Search(ctx, query, limit)
+		}()
+	} else if _, _, err := deepsearch.ParseInput(query); err != nil {
+		return nil, err // same validation as with YouTube
+	}
 	if q, err := catalog.NormalizeQuery(query); err == nil {
 		if _, videoID, _ := deepsearch.ParseInput(q); videoID == "" {
 			wg.Add(1)
@@ -141,6 +150,9 @@ func (s *Server) deepSearchAll(ctx context.Context, query string, limit int) ([]
 		seen[key] = true
 		out = append(out, deepsearch.Candidate{Track: t, Source: t.Provider, Confidence: "metadata_only"})
 	}
+	if out == nil {
+		out = []deepsearch.Candidate{}
+	}
 	if len(out) == 0 {
 		if ytErr != nil {
 			return nil, ytErr
@@ -150,6 +162,17 @@ func (s *Server) deepSearchAll(ctx context.Context, query string, limit int) ([]
 		}
 	}
 	return out, nil
+}
+
+// handleDeepSearchStatus reports whether Deep Search and yt-dlp work on
+// this server, without paths or upstream error text.
+func (s *Server) handleDeepSearchStatus(w http.ResponseWriter, r *http.Request) {
+	noStore(w)
+	st := map[string]any{"enabled": s.cfg.DeepSearchEnabled}
+	if s.cfg.DeepSearchEnabled && s.deep != nil {
+		st["youtube"] = s.deep.Status(r.Context())
+	}
+	ok(w, st)
 }
 
 func (s *Server) handleTracks(w http.ResponseWriter, r *http.Request) {

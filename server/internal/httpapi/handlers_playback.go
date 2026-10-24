@@ -52,6 +52,10 @@ func (s *Server) handlePrefetch(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, r, catalog.Invalid("trackIds must contain 1-5 ids (only the next one or two are prepared)"))
 		return
 	}
+	if !s.cfg.PrefetchEnabled {
+		ok(w, map[string]any{"items": []playback.PrefetchResult{}, "disabled": true})
+		return
+	}
 	owner := auth.Device(r.Context())
 	if owner == "" {
 		owner = "ip:" + s.clientIP(r)

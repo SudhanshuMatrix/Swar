@@ -32,6 +32,8 @@ if has android; then
   rm -f android/app/src/main/java/com/sonivo/sonivo/MainActivity.java
   mkdir -p android/app/src/main/kotlin/com/sonivo/sonivo
   cp packaging/android/MainActivity.kt android/app/src/main/kotlin/com/sonivo/sonivo/MainActivity.kt
+  # Runs yt-dlp on the phone (Deep Search and playback).
+  cp packaging/android/YtDlpChannel.kt android/app/src/main/kotlin/com/sonivo/sonivo/YtDlpChannel.kt
   # App icon and the notification's icons.
   cp -R "$ICONS"/android/res/. android/app/src/main/res/
 fi

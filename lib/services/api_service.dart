@@ -317,9 +317,22 @@ class ApiService {
 
   /// Runs only when the user asks for it: the server starts yt-dlp for
   /// each call, so it is rate limited more strictly than normal search.
-  Future<DeepSearchResult> deepSearch(String query, {int limit = 10}) async {
-    final data =
-        await _public('POST', '/v1/search/deep', body: {'query': query, 'limit': limit}) as Map<String, dynamic>;
+  ///
+  /// With [youtube] false the server only searches the music catalogs
+  /// (this device searched YouTube itself). Servers older than that option
+  /// reject it; then the full search runs instead.
+  Future<DeepSearchResult> deepSearch(String query, {int limit = 10, bool youtube = true}) async {
+    Map<String, dynamic> data;
+    try {
+      data = await _public('POST', '/v1/search/deep', body: {
+        'query': query,
+        'limit': limit,
+        if (!youtube) 'youtube': false,
+      }) as Map<String, dynamic>;
+    } on ApiException catch (e) {
+      if (youtube || e.status != 400) rethrow;
+      data = await _public('POST', '/v1/search/deep', body: {'query': query, 'limit': limit}) as Map<String, dynamic>;
+    }
     final results = ((data['results'] as List?) ?? const []).cast<Map<String, dynamic>>();
     return DeepSearchResult(results.map(Track.fromJson).toList(), (data['notice'] as String?) ?? '');
   }
