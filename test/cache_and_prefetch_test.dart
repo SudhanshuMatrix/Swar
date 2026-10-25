@@ -26,7 +26,16 @@ class _FakeApi extends ApiService {
 }
 
 void main() {
+  _noSelfAwaitingRemove();
+
   group('TtlCache', () {
+    test('a miss completes (regression: it waited for itself forever)', () async {
+      final c = TtlCache<String, int>(maxEntries: 10, fresh: const Duration(minutes: 1), stale: const Duration(minutes: 5));
+      final hit = await c.get('k', () async => 42).timeout(const Duration(seconds: 2));
+      expect(hit.value, 42);
+      expect(c.isLoading('k'), isFalse);
+    });
+
     test('fresh hit, stale-while-revalidate, expiry, errors not stored', () async {
       var now = DateTime(2026);
       final c = TtlCache<String, int>(maxEntries: 10, fresh: const Duration(minutes: 1), stale: const Duration(minutes: 5), clock: () => now);
@@ -167,5 +176,24 @@ void main() {
       api.fail = false;
       expect((await svc.search('song')).value.tracks, isNotEmpty);
     });
+  });
+}
+
+/// `f.whenComplete(() => map.remove(key))` where the map holds `f` makes `f`
+/// wait for itself forever: remove returns `f`, and whenComplete waits for
+/// a returned future. It hung every Deep Search and every yt-dlp run in
+/// 1.2.7.
+void _noSelfAwaitingRemove() {
+  test('no whenComplete callback returns map.remove(...)', () {
+    final bad = RegExp(r'whenComplete\(\(\)\s*=>\s*[\w.]+\.remove\(');
+    final hits = <String>[];
+    for (final f in Directory('lib').listSync(recursive: true).whereType<File>()) {
+      if (!f.path.endsWith('.dart')) continue;
+      final lines = f.readAsLinesSync();
+      for (var i = 0; i < lines.length; i++) {
+        if (bad.hasMatch(lines[i])) hits.add('${f.path}:${i + 1}');
+      }
+    }
+    expect(hits, isEmpty);
   });
 }

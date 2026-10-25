@@ -75,7 +75,11 @@ class YouTubeAudio {
     final f = _resolveChain(id, background).then((s) {
       _remember(id, s);
       return s;
-    }).whenComplete(() => _inflight.remove(id));
+    }).whenComplete(() {
+      // Not "=> _inflight.remove(id)", which returns this future and makes
+      // it wait for itself forever.
+      _inflight.remove(id);
+    });
     _inflight[id] = f;
     return f;
   }

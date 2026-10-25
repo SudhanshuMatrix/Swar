@@ -84,7 +84,11 @@ class TtlCache<K, V> {
     final f = Future.sync(load).then((v) {
       put(key, v);
       return v;
-    }).whenComplete(() => _loading.remove(key));
+    }).whenComplete(() {
+      // A block, not "=> _loading.remove(key)": remove returns this very
+      // future, and whenComplete would wait for it forever.
+      _loading.remove(key);
+    });
     _loading[key] = f;
     return f;
   }

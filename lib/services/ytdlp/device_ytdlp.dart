@@ -257,7 +257,11 @@ class DeviceYtDlp extends ChangeNotifier {
   Future<T> _shared<T extends Object>(String key, Future<T> Function() fn) {
     final running = _inflight[key];
     if (running != null) return running.then((v) => v as T);
-    final f = fn().whenComplete(() => _inflight.remove(key));
+    final f = fn().whenComplete(() {
+      // Not "=> _inflight.remove(key)", which returns this future and
+      // makes it wait for itself forever.
+      _inflight.remove(key);
+    });
     _inflight[key] = f;
     return f;
   }
