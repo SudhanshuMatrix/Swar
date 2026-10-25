@@ -12,9 +12,11 @@ release notes.
 
 ## [Unreleased]
 
+## [1.2.8] - 2026-10-25
+
 ### Fixed
 
-- Deep Search finds songs again and yt-dlp songs start: since 1.2.7 every new Deep Search, every yt-dlp run on the device and every stream lookup waited for itself and never finished (a `whenComplete(() => map.remove(key))` returned its own future).
+- Deep Search finds songs again, and Deep Search songs start playing. In 1.2.7 a new Deep Search, and every search or song lookup yt-dlp did on your device, kept loading and never finished.
 - JioSaavn songs play again. Since 1.2.6 the server asked JioSaavn for "saavn:<id>" instead of the song's own ID, so every song came back "track not found" (album, artist, playlist, lyrics and related lookups were affected the same way).
 - Deep Search songs play on Android: the app now ships the JavaScript runtime yt-dlp needs for YouTube (QuickJS-ng), and yt-dlp keeps a cache on the phone, so only the first song after an install waits for YouTube's player script.
 
