@@ -116,15 +116,26 @@ class YouTubeAudio {
   }
 
   static final _matches = LinkedHashMap<String, String>();
+  static final _inflightFind = <String, Future<String?>>{};
 
   /// Finds the YouTube video for a catalog song (Spotify, Deezer...) by
   /// searching YouTube with yt-dlp on this device. Prefers a video whose
   /// length matches the song and skips live, cover and remix uploads unless
   /// the song itself is one. Returns null when nothing fits.
-  static Future<String?> findVideoId(String title, String artist, Duration duration) async {
+  static Future<String?> findVideoId(String title, String artist, Duration duration) {
     final key = '${title.toLowerCase()}|${artist.toLowerCase()}';
     final known = _matches[key];
-    if (known != null) return known;
+    if (known != null) return Future.value(known);
+    final running = _inflightFind[key];
+    if (running != null) return running;
+    final f = _findVideoId(title, artist, duration, key).whenComplete(() {
+      _inflightFind.remove(key);
+    });
+    _inflightFind[key] = f;
+    return f;
+  }
+
+  static Future<String?> _findVideoId(String title, String artist, Duration duration, String key) async {
     if (!DeviceYtDlp.instance.installed) throw _notReady;
     final results = await DeviceYtDlp.instance.search('$title $artist audio', limit: 10);
     final wanted = title.toLowerCase();

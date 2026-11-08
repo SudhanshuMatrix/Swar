@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -275,18 +276,30 @@ class DeviceYtDlp extends ChangeNotifier {
     ['--socket-timeout', '10'],
   ];
 
+  static final _searchCache = LinkedHashMap<String, ({List<Track> tracks, DateTime expiry})>();
+
   /// Searches YouTube from this device. [input] is search text or a
   /// YouTube link (anything else throws [YtDlpInputException]).
   Future<List<Track>> search(String input, {int limit = 10}) => Future.sync(() {
         final arg = YtDlpTarget.parse(input).argument(limit);
+        final key = '${arg.toLowerCase()}|$limit';
+        final cached = _searchCache.remove(key);
+        if (cached != null && DateTime.now().isBefore(cached.expiry)) {
+          _searchCache[key] = cached;
+          return Future.value(cached.tracks);
+        }
         return _searchRun(arg, limit);
       });
 
   Future<List<Track>> _searchRun(String arg, int limit) {
-    return _shared('search|${arg.toLowerCase()}', () async {
+    final key = '${arg.toLowerCase()}|$limit';
+    return _shared('search|$key', () async {
       final out = await _run([..._common, ['--flat-playlist']], arg, _searchTimeout, 8 << 20);
       final json = await _decode(out);
-      return parseSearch(json, limit);
+      final tracks = parseSearch(json, limit);
+      _searchCache[key] = (tracks: tracks, expiry: DateTime.now().add(const Duration(minutes: 30)));
+      if (_searchCache.length > 50) _searchCache.remove(_searchCache.keys.first);
+      return tracks;
     });
   }
 

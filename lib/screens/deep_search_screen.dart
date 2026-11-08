@@ -75,6 +75,12 @@ class _DeepSearchScreenState extends State<DeepSearchScreen> {
     _results = tracks;
     _notice = notice;
     _searched = true;
+    if (mounted) {
+      final player = context.read<PlayerProvider>();
+      for (final t in tracks.where((r) => r.playable).take(2)) {
+        player.prewarmTrack(t);
+      }
+    }
   }
 
   @override

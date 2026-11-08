@@ -97,7 +97,10 @@ class _SearchScreenState extends State<SearchScreen> {
     }
     context.read<LibraryProvider>().addSearch(trimmed);
     final key = trimmed.toLowerCase();
-    final cached = _cache.remove(key);
+    final api = context.read<ApiService>();
+    final player = context.read<PlayerProvider>();
+
+    final cached = _cache.remove(key) ?? api.cachedSearchAll(trimmed);
     if (cached != null) {
       _cache[key] = cached;
       setState(() {
@@ -109,6 +112,9 @@ class _SearchScreenState extends State<SearchScreen> {
         _loading = false;
         _error = null;
       });
+      for (final t in cached.songs.take(2)) {
+        player.prewarmTrack(t);
+      }
       return;
     }
     setState(() {
@@ -119,27 +125,22 @@ class _SearchScreenState extends State<SearchScreen> {
       _playlists = [];
       _artists = [];
     });
-    final api = context.read<ApiService>();
-    // Songs show as soon as they arrive; singers and playlists fill in when
-    // they're ready. They're a bonus: if those searches fail, songs still show.
-    final playlistsFuture = api.searchPlaylists(trimmed).catchError((_) => <OnlinePlaylist>[]);
-    final artistsFuture = api.searchArtists(trimmed, limit: 8).catchError((_) => <OnlineArtist>[]);
-    playlistsFuture.then((p) {
-      if (mounted && id == _searchId) setState(() => _playlists = p);
-    });
-    artistsFuture.then((a) {
-      if (mounted && id == _searchId) setState(() => _artists = a);
-    });
     try {
-      final results = await api.search(trimmed);
+      final res = await api.searchAll(trimmed);
       if (!mounted || id != _searchId) return;
       setState(() {
-        _results = results;
+        _results = res.songs;
+        _playlists = res.playlists;
+        _artists = res.artists;
         _searched = true;
         _loading = false;
       });
-      _cache[key] = (songs: results, playlists: await playlistsFuture, artists: await artistsFuture);
-      if (_cache.length > 30) _cache.remove(_cache.keys.first);
+      _cache[key] = res;
+      if (_cache.length > 50) _cache.remove(_cache.keys.first);
+
+      for (final t in res.songs.take(2)) {
+        player.prewarmTrack(t);
+      }
     } catch (e) {
       if (!mounted || id != _searchId) return;
       setState(() => _error = friendlyError(e));
@@ -153,8 +154,15 @@ class _SearchScreenState extends State<SearchScreen> {
     _debounce?.cancel();
     final q = text.trim();
     if (q.length >= 2) {
-      // Wait for a pause in typing so each keystroke isn't a request.
-      _debounce = Timer(const Duration(milliseconds: 250), () => _loadSuggestions(q));
+      final cached = context.read<ApiService>().cachedSuggestions(q);
+      if (cached != null) {
+        setState(() {
+          _suggestSongs = cached.songs;
+          _suggestArtists = cached.artists;
+        });
+      }
+      // Quick debounce for responsive autocomplete typing
+      _debounce = Timer(const Duration(milliseconds: 160), () => _loadSuggestions(q));
     }
     if (text.isEmpty && (_results.isNotEmpty || _hasExtras)) {
       setState(() {
@@ -178,6 +186,9 @@ class _SearchScreenState extends State<SearchScreen> {
         _suggestSongs = s.songs;
         _suggestArtists = s.artists;
       });
+      if (s.songs.isNotEmpty && mounted) {
+        context.read<PlayerProvider>().prewarmTrack(s.songs.first);
+      }
     } catch (_) {
       // Suggestions are optional; the full search still works.
     }

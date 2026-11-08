@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 
 import 'package:hive_flutter/hive_flutter.dart';
@@ -182,7 +183,15 @@ class ApiService {
     }
   }
 
+  static final _audioCache = LinkedHashMap<String, ({StreamResult result, DateTime expires})>();
+
   Future<StreamResult> resolveAudio(String trackId) async {
+    final now = DateTime.now();
+    final cached = _audioCache.remove(trackId);
+    if (cached != null && now.isBefore(cached.expires)) {
+      _audioCache[trackId] = cached;
+      return cached.result;
+    }
     final res = await _http.get(Uri.parse('$baseUrl/track/${Uri.encodeComponent(trackId)}'));
     if (res.statusCode != 200) {
       throw _legacyError(res, 'Could not resolve audio');
@@ -191,7 +200,10 @@ class ApiService {
     var url = (data['audio_url'] as String?) ?? '';
     // Deep Search audio is relayed by the server and comes back as a path.
     if (url.startsWith('/')) url = '$baseUrl$url';
-    return StreamResult(url: url, track: Track.fromJson(data), isPreview: data['preview'] == true);
+    final result = StreamResult(url: url, track: Track.fromJson(data), isPreview: data['preview'] == true);
+    _audioCache[trackId] = (result: result, expires: now.add(const Duration(minutes: 30)));
+    if (_audioCache.length > 100) _audioCache.remove(_audioCache.keys.first);
+    return result;
   }
 
   /// Why the server's audio relay won't serve [url] (a Deep Search song),
@@ -283,19 +295,68 @@ class ApiService {
         .toList());
   }
 
+  static final _suggestCache = LinkedHashMap<String, ({List<Track> songs, List<OnlineArtist> artists})>();
+  static final _searchAllCache =
+      LinkedHashMap<String, ({List<Track> songs, List<OnlinePlaylist> playlists, List<OnlineArtist> artists})>();
+
+  /// Returns cached suggestions synchronously if present.
+  ({List<Track> songs, List<OnlineArtist> artists})? cachedSuggestions(String query) {
+    return _suggestCache[query.trim().toLowerCase()];
+  }
+
   /// A few songs and singers for [query], for suggestions while typing. One
   /// small request, which also warms the server's cache for the full search.
   Future<({List<Track> songs, List<OnlineArtist> artists})> suggest(String query) async {
+    final key = query.trim().toLowerCase();
+    final cached = _suggestCache.remove(key);
+    if (cached != null) {
+      _suggestCache[key] = cached;
+      return cached;
+    }
     final q = Uri(queryParameters: {'q': query, 'type': 'all', 'limit': '5'}).query;
     final data = await _public('GET', '/v1/search?$q') as Map<String, dynamic>;
     List<Map<String, dynamic>> results(String key) =>
         (((data[key] as Map<String, dynamic>?)?['results'] as List?) ?? const [])
             .whereType<Map<String, dynamic>>()
             .toList();
-    return (
+    final res = (
       songs: results('songs').map(Track.fromJson).where((t) => t.playable).toList(),
       artists: results('artists').map(OnlineArtist.fromJson).toList(),
     );
+    _suggestCache[key] = res;
+    if (_suggestCache.length > 100) _suggestCache.remove(_suggestCache.keys.first);
+    return res;
+  }
+
+  /// Returns cached search results synchronously if present.
+  ({List<Track> songs, List<OnlinePlaylist> playlists, List<OnlineArtist> artists})? cachedSearchAll(
+      String query, {int limit = 30}) {
+    return _searchAllCache['$query|$limit'.trim().toLowerCase()];
+  }
+
+  /// Unified catalog search: fetches songs, playlists, and artists in a single
+  /// request, served with client-side and server-side in-memory caching.
+  Future<({List<Track> songs, List<OnlinePlaylist> playlists, List<OnlineArtist> artists})> searchAll(
+      String query, {int limit = 30}) async {
+    final key = '$query|$limit'.trim().toLowerCase();
+    final cached = _searchAllCache.remove(key);
+    if (cached != null) {
+      _searchAllCache[key] = cached;
+      return cached;
+    }
+    final q = Uri(queryParameters: {'q': query, 'type': 'all', 'limit': '$limit'}).query;
+    final data = await _public('GET', '/v1/search?$q') as Map<String, dynamic>;
+    List<Map<String, dynamic>> results(String key) =>
+        (((data[key] as Map<String, dynamic>?)?['results'] as List?) ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .toList();
+    final songs = results('songs').map(Track.fromJson).where((t) => t.playable).toList();
+    final artists = rankArtists(results('artists').map(OnlineArtist.fromJson).toList());
+    final playlists = results('playlists').map(OnlinePlaylist.fromJson).toList();
+    final res = (songs: songs, playlists: playlists, artists: artists);
+    _searchAllCache[key] = res;
+    if (_searchAllCache.length > 50) _searchAllCache.remove(_searchAllCache.keys.first);
+    return res;
   }
 
   /// The artist's profile with their top songs.

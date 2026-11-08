@@ -580,12 +580,13 @@ class PlayerProvider extends ChangeNotifier {
     bool onDevice(Track t) => t.isDeepSearchResult && YouTubeAudio.supported;
     final serverIds = [for (final t in tracks) if (!onDevice(t)) t.id];
     if (serverIds.isNotEmpty) api.prefetch(serverIds, dataSaver: settings.dataSaver).catchError((_) {});
-    // Give the current song's start a head start, then prepare the very
-    // next song (only it: a YouTube resolve is the expensive part).
-    Timer(const Duration(seconds: 3), () async {
+    // Give current song start a brief head start, then warm upcoming tracks
+    Timer(const Duration(milliseconds: 300), () async {
       if (gen != _prefetchGen) return;
-      final next = tracks.first;
-      if (onDevice(next)) await YouTubeAudio.prefetch(next.id);
+      for (final t in tracks.take(2)) {
+        if (gen != _prefetchGen) break;
+        await _warmTrack(t);
+      }
       if (gen != _prefetchGen || settings.dataSaver) return;
       final ctx = ErrorPopup.navigatorKey.currentContext;
       if (ctx == null || !ctx.mounted) return;
@@ -595,6 +596,32 @@ class PlayerProvider extends ChangeNotifier {
         }
       }
     });
+  }
+
+  /// Warms up a track (e.g. from search suggestions or search results)
+  /// so that if the listener taps it, playback begins without delay.
+  void prewarmTrack(Track track) {
+    unawaited(_warmTrack(track));
+  }
+
+  Future<void> _warmTrack(Track track) async {
+    try {
+      if (downloads?.localFileFor(track.id) != null) return;
+      if (track.isDeepSearchResult && YouTubeAudio.supported) {
+        await YouTubeAudio.prefetch(track.id);
+        return;
+      }
+      // Catalog track: resolve audio URL so it's cached in memory
+      final stream = await api.resolveAudio(track.id);
+      if (stream.isPreview && YouTubeAudio.supported) {
+        // Deep search catalog songs need YouTube for the full song
+        var ytId = stream.track.youtubeId ?? track.youtubeId;
+        ytId ??= await YouTubeAudio.findVideoId(track.title, track.artist, track.duration);
+        if (ytId != null) {
+          await YouTubeAudio.prefetch(ytId);
+        }
+      }
+    } catch (_) {}
   }
 
   /// Starts a radio station seeded by [track] and plays it.

@@ -5,12 +5,14 @@ package search
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
 
+	"swar/internal/cache"
 	"swar/internal/catalog"
 )
 
@@ -47,13 +49,19 @@ type Result struct {
 }
 
 type Service struct {
-	cat *catalog.Service
+	cat   *catalog.Service
+	cache *cache.Cache
 }
 
-func New(cat *catalog.Service) *Service { return &Service{cat: cat} }
+func New(cat *catalog.Service) *Service {
+	return &Service{
+		cat:   cat,
+		cache: cache.New(500),
+	}
+}
 
-// Search runs the requested categories concurrently. Limit is clamped to
-// [1, 50]; for "all" each category gets the same limit.
+// Search runs the requested categories concurrently with caching. Limit is clamped to
+// [1, 100]; for "all" each category gets the same limit.
 func (s *Service) Search(ctx context.Context, rawQuery string, typ Type, page, limit int) (*Result, error) {
 	q, err := catalog.NormalizeQuery(rawQuery)
 	if err != nil {
@@ -61,6 +69,26 @@ func (s *Service) Search(ctx context.Context, rawQuery string, typ Type, page, l
 	}
 	limit = clamp(limit, 1, 100)
 	page = clamp(page, 0, 100)
+
+	if s.cache == nil {
+		return s.searchUncached(ctx, q, typ, page, limit)
+	}
+
+	key := fmt.Sprintf("%s|%s|%d|%d", q, typ, page, limit)
+	return cache.GetOrLoad[*Result](ctx, s.cache, key, 10*time.Second, func(lctx context.Context) (*Result, time.Duration, error) {
+		res, err := s.searchUncached(lctx, q, typ, page, limit)
+		if err != nil {
+			return nil, 0, err
+		}
+		ttl := 5 * time.Minute
+		if res.Partial {
+			ttl = 20 * time.Second
+		}
+		return res, ttl, nil
+	})
+}
+
+func (s *Service) searchUncached(ctx context.Context, q string, typ Type, page, limit int) (*Result, error) {
 	r := &Result{Query: q}
 
 	var mu sync.Mutex
