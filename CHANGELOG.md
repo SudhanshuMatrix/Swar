@@ -12,6 +12,13 @@ release notes.
 
 ## [Unreleased]
 
+## [1.2.9] - 2026-11-08
+
+### Improved
+
+- Deep Search reliability on Android: verified on-device yt-dlp initialization, background updates, and QuickJS runtime execution for YouTube signature deciphering.
+- Playback resilience for on-device YouTube streaming.
+
 ## [1.2.8] - 2026-10-25
 
 ### Fixed
