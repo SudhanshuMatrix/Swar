@@ -190,7 +190,21 @@ class YtDlpInstaller {
     await dir.create(recursive: true);
     await _bin.create(recursive: true);
 
-    final sums = parseSums(await _getText('$releasesUrl/latest/download/SHA2-256SUMS'));
+    final ext = os == 'windows' ? '.exe' : '';
+    final tmp = File('${_bin.path}${Platform.pathSeparator}download.tmp');
+
+    // Query GitHub API to discover direct Azure asset download links (bypasses GitHub 504 edge timeout)
+    final apiAssets = await _fetchGitHubApiAssets();
+    final apiSums = apiAssets?['SHA2-256SUMS'];
+    final apiBinary = apiAssets?[asset];
+
+    final sumsCandidates = [
+      if (apiSums != null) apiSums,
+      '$releasesUrl/latest/download/SHA2-256SUMS',
+      'https://ghproxy.net/https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS',
+    ];
+
+    final sums = parseSums(await _getText(sumsCandidates.first, fallbackUrls: sumsCandidates.sublist(1)));
     final want = sums[asset];
     if (want == null) throw YtDlpInstallException('The yt-dlp release has no checksum for $asset.');
     final state = await _readState();
@@ -200,9 +214,13 @@ class YtDlpInstaller {
       return state['version'] as String;
     }
 
-    final ext = os == 'windows' ? '.exe' : '';
-    final tmp = File('${_bin.path}${Platform.pathSeparator}download.tmp');
-    final got = await _download('$releasesUrl/latest/download/$asset', tmp, onProgress);
+    final binaryCandidates = [
+      if (apiBinary != null) apiBinary,
+      '$releasesUrl/latest/download/$asset',
+      'https://ghproxy.net/https://github.com/yt-dlp/yt-dlp/releases/latest/download/$asset',
+    ];
+
+    final got = await _download(binaryCandidates.first, tmp, onProgress, fallbackUrls: binaryCandidates.sublist(1));
     if (got != want) {
       await _delete(tmp);
       throw const YtDlpInstallException('The downloaded yt-dlp did not match its checksum and was deleted.');
@@ -264,43 +282,111 @@ class YtDlpInstaller {
     return true;
   }
 
-  Future<String> _getText(String url) async {
-    final res = await _http.get(Uri.parse(url)).timeout(const Duration(seconds: 30));
-    if (res.statusCode != 200) throw YtDlpInstallException('Could not reach the yt-dlp release (${res.statusCode}).');
-    if (res.bodyBytes.length > _maxSumsBytes) throw const YtDlpInstallException('Unexpected checksum file.');
-    return utf8.decode(res.bodyBytes, allowMalformed: true);
+  Future<Map<String, String>?> _fetchGitHubApiAssets() async {
+    try {
+      final req = http.Request('GET', Uri.parse('https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest'));
+      req.headers['Accept'] = 'application/vnd.github+json';
+      req.headers['User-Agent'] = 'Swar';
+      final streamed = await _http.send(req).timeout(const Duration(seconds: 10));
+      final res = await http.Response.fromStream(streamed);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data is Map && data['assets'] is List) {
+          final out = <String, String>{};
+          for (final a in data['assets']) {
+            if (a is Map && a['name'] is String && a['url'] is String) {
+              out[a['name'] as String] = a['url'] as String;
+            }
+          }
+          return out;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<String> _getText(String url, {List<String>? fallbackUrls}) async {
+    final urls = [url, if (fallbackUrls != null) ...fallbackUrls];
+    Object? lastError;
+    int? lastStatus;
+    for (final u in urls) {
+      try {
+        final req = http.Request('GET', Uri.parse(u));
+        req.headers['User-Agent'] = 'Swar';
+        if (u.contains('api.github.com')) {
+          req.headers['Accept'] = 'application/octet-stream';
+        }
+        final streamed = await _http.send(req).timeout(const Duration(seconds: 25));
+        final res = await http.Response.fromStream(streamed);
+        if (res.statusCode == 200) {
+          if (res.bodyBytes.length > _maxSumsBytes) throw const YtDlpInstallException('Unexpected checksum file.');
+          return utf8.decode(res.bodyBytes, allowMalformed: true);
+        }
+        lastStatus = res.statusCode;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    if (lastStatus == 504) {
+      throw const YtDlpInstallException('Could not reach server: gateway timeout (504). Please check your connection and try again.');
+    }
+    if (lastStatus != null) {
+      throw YtDlpInstallException('Could not reach the yt-dlp release ($lastStatus).');
+    }
+    throw YtDlpInstallException('Could not reach the yt-dlp release (${lastError ?? "connection error"}).');
   }
 
   /// Streams [url] to [to], hashing as it goes. Returns the hex SHA-256.
-  Future<String> _download(String url, File to, void Function(double?)? onProgress) async {
-    final req = http.Request('GET', Uri.parse(url));
-    final res = await _http.send(req).timeout(const Duration(seconds: 30));
-    if (res.statusCode != 200) {
-      throw YtDlpInstallException('Could not download yt-dlp (${res.statusCode}).');
-    }
-    final sink = to.openWrite();
-    final hashOut = _DigestSink();
-    final hasher = sha256.startChunkedConversion(hashOut);
-    var total = 0;
-    final size = res.contentLength;
-    onProgress?.call(size == null || size <= 0 ? null : 0);
-    try {
-      await for (final chunk in res.stream.timeout(const Duration(seconds: 60))) {
-        total += chunk.length;
-        if (total > _maxBinaryBytes) throw const YtDlpInstallException('The yt-dlp download was unexpectedly large.');
-        hasher.add(chunk);
-        sink.add(chunk);
-        if (size != null && size > 0) onProgress?.call((total / size).clamp(0, 1).toDouble());
+  Future<String> _download(String url, File to, void Function(double?)? onProgress, {List<String>? fallbackUrls}) async {
+    final urls = [url, if (fallbackUrls != null) ...fallbackUrls];
+    Object? lastError;
+    int? lastStatus;
+    for (final u in urls) {
+      try {
+        final req = http.Request('GET', Uri.parse(u));
+        req.headers['User-Agent'] = 'Swar';
+        if (u.contains('api.github.com')) {
+          req.headers['Accept'] = 'application/octet-stream';
+        }
+        final res = await _http.send(req).timeout(const Duration(seconds: 25));
+        if (res.statusCode != 200) {
+          lastStatus = res.statusCode;
+          continue;
+        }
+        final sink = to.openWrite();
+        final hashOut = _DigestSink();
+        final hasher = sha256.startChunkedConversion(hashOut);
+        var total = 0;
+        final size = res.contentLength;
+        onProgress?.call(size == null || size <= 0 ? null : 0);
+        try {
+          await for (final chunk in res.stream.timeout(const Duration(seconds: 60))) {
+            total += chunk.length;
+            if (total > _maxBinaryBytes) throw const YtDlpInstallException('The yt-dlp download was unexpectedly large.');
+            hasher.add(chunk);
+            sink.add(chunk);
+            if (size != null && size > 0) onProgress?.call((total / size).clamp(0, 1).toDouble());
+          }
+        } finally {
+          await sink.flush();
+          await sink.close();
+        }
+        hasher.close();
+        return hashOut.value.toString();
+      } catch (e) {
+        lastError = e;
+        try {
+          if (to.existsSync()) to.deleteSync();
+        } catch (_) {}
       }
-    } catch (_) {
-      await sink.close();
-      await _delete(to);
-      rethrow;
     }
-    await sink.flush();
-    await sink.close();
-    hasher.close();
-    return hashOut.value.toString();
+    if (lastStatus == 504) {
+      throw const YtDlpInstallException('Could not reach server: gateway timeout (504). Please check your connection and try again.');
+    }
+    if (lastStatus != null) {
+      throw YtDlpInstallException('Could not download yt-dlp ($lastStatus).');
+    }
+    throw YtDlpInstallException('Could not download yt-dlp (${lastError ?? "connection error"}).');
   }
 
   Future<void> _prune({required Set<String> keep}) async {

@@ -12,6 +12,13 @@ release notes.
 
 ## [Unreleased]
 
+## [1.2.10] - 2026-11-08
+
+### Fixed
+
+- Fixed "could not reach server (504)" error during first-time setup and background downloads. The app now routes release asset downloads through the direct GitHub API with Azure Blob CDN redirects and mirror fallbacks to bypass regional GitHub 504 edge timeouts.
+- Graceful handling and informative messaging for reverse proxy and upstream gateway timeouts (504).
+
 ## [1.2.9] - 2026-11-08
 
 ### Improved

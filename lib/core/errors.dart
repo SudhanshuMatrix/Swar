@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'app_icons.dart';
 import '../services/api_service.dart';
 import '../services/youtube_audio.dart';
+import '../services/ytdlp/ytdlp_installer.dart';
 import '../state/app_status.dart';
 import 'theme.dart';
 
@@ -23,7 +24,11 @@ class InputError implements Exception {
 String friendlyError(Object error) {
   if (error is InputError) return error.message;
   if (error is YouTubeAudioException) return error.message;
+  if (error is YtDlpInstallException) return error.message;
   if (error is ApiException) {
+    if (error.status == 504 || error.code == 'upstream_timeout') {
+      return 'The server took too long to respond (504 Gateway Timeout). Please try again in a moment.';
+    }
     switch (error.code) {
       case 'maintenance':
         return error.message.isNotEmpty ? error.message : 'Swar is down for maintenance. Please check back soon.';

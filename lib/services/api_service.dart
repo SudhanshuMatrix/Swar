@@ -142,8 +142,11 @@ class ApiService {
     }
     final err = body?['error'];
     final code = err is Map ? (err['code'] as String? ?? 'error') : (body?['code'] as String? ?? 'error');
-    final msg = (body?['message'] as String?) ?? (err is String ? err : 'Request failed (${res.statusCode})');
-    throw ApiException(res.statusCode, code, msg);
+    var msg = (body?['message'] as String?) ?? (err is String ? err : 'Request failed (${res.statusCode})');
+    if (res.statusCode == 504 && (body == null || code == 'error')) {
+      msg = 'The server timed out (504). Please try again in a moment.';
+    }
+    throw ApiException(res.statusCode, res.statusCode == 504 ? 'upstream_timeout' : code, msg);
   }
 
   /// Maintenance mode and the active popup (see [AppStatus]).
@@ -168,6 +171,9 @@ class ApiService {
   }
 
   ApiException _legacyError(http.Response res, String fallback) {
+    if (res.statusCode == 504) {
+      return const ApiException(504, 'upstream_timeout', 'The server timed out (504). Please try again in a moment.');
+    }
     try {
       final body = jsonDecode(res.body) as Map<String, dynamic>;
       return ApiException(res.statusCode, (body['code'] as String?) ?? 'error', (body['error'] as String?) ?? fallback);
