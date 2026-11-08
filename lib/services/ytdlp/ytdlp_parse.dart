@@ -122,7 +122,7 @@ String _thumbnail(Map<String, dynamic> e, String id) {
 /// Picks the audio stream to play from a video's full metadata. Refuses
 /// restricted videos and DRM formats; prefers m4a (AAC), which every
 /// platform's player handles, then the higher bitrate.
-DeviceStream parseResolve(Map<String, dynamic> root, {DateTime? now}) {
+DeviceStream parseResolve(Map<String, dynamic> root, {DateTime? now, bool topQuality = false}) {
   final availability = _str(root['availability']);
   if (availability.isNotEmpty && availability != 'public' && availability != 'unlisted') {
     throw const YtDlpUnplayable('This video is restricted and cannot be played.');
@@ -140,7 +140,7 @@ DeviceStream parseResolve(Map<String, dynamic> root, {DateTime? now}) {
       final vcodec = _str(f['vcodec']);
       final acodec = _str(f['acodec']);
       if (vcodec != 'none' || acodec.isEmpty || acodec == 'none') continue;
-      if (best == null || _better(f, best)) best = f;
+      if (best == null || _better(f, best, topQuality: topQuality)) best = f;
     }
   }
   if (best == null) throw const YtDlpUnplayable('No playable audio was found for this video.');
@@ -161,11 +161,18 @@ DeviceStream parseResolve(Map<String, dynamic> root, {DateTime? now}) {
   );
 }
 
-bool _better(Map<String, dynamic> a, Map<String, dynamic> b) {
+bool _better(Map<String, dynamic> a, Map<String, dynamic> b, {bool topQuality = false}) {
+  final aa = (a['abr'] as num?)?.toDouble() ?? 0.0;
+  final ba = (b['abr'] as num?)?.toDouble() ?? 0.0;
+  if (topQuality) {
+    if ((aa - ba).abs() > 1.0) return aa > ba;
+    final am4a = a['ext'] == 'm4a', bm4a = b['ext'] == 'm4a';
+    if (am4a != bm4a) return am4a;
+    return aa > ba;
+  }
   final am4a = a['ext'] == 'm4a', bm4a = b['ext'] == 'm4a';
   if (am4a != bm4a) return am4a;
-  final aa = a['abr'], ba = b['abr'];
-  return (aa is num ? aa : 0) > (ba is num ? ba : 0);
+  return aa > ba;
 }
 
 bool _drm(Object? v) => v == true || (v is String && v.isNotEmpty && v != 'false');

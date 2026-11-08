@@ -41,20 +41,21 @@ class YouTubeAudio {
   static final _inflight = <String, Future<DeviceStream>>{};
 
   static String _id(String trackId) => trackId.startsWith('yt:') ? trackId.substring(3) : trackId;
+  static String _cacheKey(String id, bool topQuality) => topQuality ? '$id:top' : id;
 
   /// A cached stream for [trackId] that is still valid, or null.
-  static DeviceStream? cached(String trackId) {
-    final id = _id(trackId);
-    final hit = _cache.remove(id);
+  static DeviceStream? cached(String trackId, {bool topQuality = false}) {
+    final key = _cacheKey(_id(trackId), topQuality);
+    final hit = _cache.remove(key);
     if (hit == null) return null;
     if (!hit.validAt(DateTime.now())) return null;
-    _cache[id] = hit; // most recently used
+    _cache[key] = hit; // most recently used
     return hit;
   }
 
-  static void _remember(String id, DeviceStream s) {
-    _cache.remove(id);
-    _cache[id] = s;
+  static void _remember(String key, DeviceStream s) {
+    _cache.remove(key);
+    _cache[key] = s;
     while (_cache.length > _maxCached) {
       _cache.remove(_cache.keys.first);
     }
@@ -62,30 +63,33 @@ class YouTubeAudio {
 
   /// The audio stream for a track id such as "yt:dQw4w9WgXcQ". Set [fresh]
   /// to skip the cache (the cached URL just failed to load).
-  static Future<DeviceStream> resolve(String trackId, {bool fresh = false, bool background = false}) {
+  static Future<DeviceStream> resolve(String trackId,
+      {bool fresh = false, bool background = false, bool topQuality = false}) {
     final id = _id(trackId);
+    final key = _cacheKey(id, topQuality);
     if (!fresh) {
-      final hit = cached(id);
+      final hit = cached(trackId, topQuality: topQuality);
       if (hit != null) return Future.value(hit);
     } else {
-      _cache.remove(id);
+      _cache.remove(key);
     }
-    final running = _inflight[id];
+    final running = _inflight[key];
     if (running != null) return running;
-    final f = _resolveChain(id, background).then((s) {
-      _remember(id, s);
+    final f = _resolveChain(id, background, topQuality: topQuality).then((s) {
+      _remember(key, s);
       return s;
     }).whenComplete(() {
-      // Not "=> _inflight.remove(id)", which returns this future and makes
+      // Not "=> _inflight.remove(key)", which returns this future and makes
       // it wait for itself forever.
-      _inflight.remove(id);
+      _inflight.remove(key);
     });
-    _inflight[id] = f;
+    _inflight[key] = f;
     return f;
   }
 
   /// Compatibility: just the URL.
-  static Future<String> streamUrl(String trackId) async => (await resolve(trackId)).url;
+  static Future<String> streamUrl(String trackId, {bool topQuality = false}) async =>
+      (await resolve(trackId, topQuality: topQuality)).url;
 
   /// Resolves ahead of time so the song starts at once. Never throws; does
   /// nothing when the stream is already cached or yt-dlp is busy with songs
@@ -97,10 +101,10 @@ class YouTubeAudio {
     } catch (_) {}
   }
 
-  static Future<DeviceStream> _resolveChain(String id, bool background) async {
+  static Future<DeviceStream> _resolveChain(String id, bool background, {bool topQuality = false}) async {
     if (!DeviceYtDlp.instance.installed) throw _notReady;
     try {
-      return await DeviceYtDlp.instance.resolve(id, background: background);
+      return await DeviceYtDlp.instance.resolve(id, background: background, topQuality: topQuality);
     } on YtDlpUnplayable catch (e) {
       throw YouTubeAudioException(e.message);
     } on YouTubeAudioException {
@@ -159,5 +163,9 @@ class YouTubeAudio {
   }
 
   /// Drops a cached URL that failed to play, so the next try asks again.
-  static void forget(String trackId) => _cache.remove(_id(trackId));
+  static void forget(String trackId) {
+    final id = _id(trackId);
+    _cache.remove(id);
+    _cache.remove(_cacheKey(id, true));
+  }
 }

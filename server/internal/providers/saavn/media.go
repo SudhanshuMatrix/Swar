@@ -83,9 +83,16 @@ func decodeMediaURL(enc string) ([]catalog.MediaSource, error) {
 	}
 	out := make([]catalog.MediaSource, 0, len(qualities))
 	for _, q := range qualities {
+		u := link
+		for _, old := range []string{"_96", "_160", "_320", "_48", "_12"} {
+			if strings.Contains(u, old) {
+				u = strings.Replace(u, old, q.suffix, 1)
+				break
+			}
+		}
 		out = append(out, catalog.MediaSource{
 			Kind: "audio", Quality: q.label, Bitrate: q.kbps, MimeType: "audio/mp4",
-			URL: strings.Replace(link, "_96", q.suffix, 1),
+			URL: u,
 		})
 	}
 	return out, nil

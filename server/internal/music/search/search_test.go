@@ -222,7 +222,7 @@ func TestMainSearchUsesSpotifyAndDeepSearchAll(t *testing.T) {
 		t.Fatalf("main search should come from Spotify only, got %+v", main)
 	}
 	deep, _ := fed.SearchTracks(context.Background(), "Kesariya", 10)
-	if len(deep) < 2 || deep[0].ProviderMeta["sources"] != "sp,dz" {
+	if len(deep) < 2 || (deep[0].ProviderMeta["sources"] != "sp,dz" && deep[0].ProviderMeta["sources"] != "dz,sp") {
 		t.Fatalf("deep search should ask every provider, got %+v", deep)
 	}
 

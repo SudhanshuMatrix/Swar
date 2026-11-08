@@ -86,6 +86,28 @@ void main() {
       expect(s.via, 'yt-dlp');
     });
 
+    test('resolve with topQuality picks highest bitrate regardless of codec', () {
+      final now = DateTime(2026, 10, 24, 12);
+      final exp = now.add(const Duration(hours: 2)).millisecondsSinceEpoch ~/ 1000;
+      final s = parseResolve({
+        'availability': 'public',
+        'formats': [
+          {'url': 'https://x/opus?expire=$exp', 'ext': 'webm', 'acodec': 'opus', 'vcodec': 'none', 'abr': 160, 'protocol': 'https'},
+          {
+            'url': 'https://x/aac?expire=$exp',
+            'ext': 'm4a',
+            'acodec': 'mp4a',
+            'vcodec': 'none',
+            'abr': 128,
+            'protocol': 'https',
+            'http_headers': {'User-Agent': 'UA'}
+          },
+        ]
+      }, now: now, topQuality: true);
+      expect(s.url, startsWith('https://x/opus'));
+      expect(s.bitrateKbps, 160);
+    });
+
     test('restricted, live and audio-less videos are refused', () {
       for (final root in [
         {'availability': 'subscriber_only', 'formats': []},

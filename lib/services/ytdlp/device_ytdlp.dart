@@ -291,16 +291,17 @@ class DeviceYtDlp extends ChangeNotifier {
   }
 
   /// The audio stream for one video, resolved on this device.
-  Future<DeviceStream> resolve(String videoId, {bool background = false}) {
+  Future<DeviceStream> resolve(String videoId, {bool background = false, bool topQuality = false}) {
     if (!isVideoId(videoId)) return Future.error(const YtDlpInputException('Not a YouTube video.'));
-    return _shared('resolve|$videoId', () async {
+    final cacheKey = 'resolve|$videoId|topQuality:$topQuality';
+    return _shared(cacheKey, () async {
       final out = await _run([
         ..._common,
         // Popular videos list captions in every language, which makes the
         // output much larger.
         ['--extractor-args', 'youtube:skip=translated_subs'],
       ], watchUrl(videoId), _resolveTimeout, 32 << 20, background: background);
-      return parseResolve(await _decode(out));
+      return parseResolve(await _decode(out), topQuality: topQuality);
     });
   }
 

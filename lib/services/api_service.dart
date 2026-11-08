@@ -366,6 +366,25 @@ class ApiService {
 
   // ---- Downloads ----
 
+  static int _extractBitrate(Map s) {
+    final b = s['bitrateKbps'] ?? s['bitrate'];
+    if (b is num) return b.toInt();
+    final q = s['quality'];
+    if (q is String) {
+      final m = RegExp(r'(\d+)').firstMatch(q);
+      if (m != null) return int.tryParse(m.group(1)!) ?? 0;
+    }
+    return 0;
+  }
+
+  /// Ensures top audio quality (e.g. 320kbps for Saavn songs) when downloading.
+  static String ensureTopAudioQuality(String url) {
+    if (url.contains('saavncdn.com')) {
+      return url.replaceAll(RegExp(r'_(12|48|96|160)\.(mp4|m4a)'), '_320.\$2');
+    }
+    return url;
+  }
+
   Future<DownloadEligibility> downloadEligibility(String trackId) async {
     final data =
         await _public('GET', '/v1/downloads/eligibility/${Uri.encodeComponent(trackId)}') as Map<String, dynamic>;
@@ -374,8 +393,11 @@ class ApiService {
     if (d is Map && d['sources'] is List) {
       final audio = (d['sources'] as List).whereType<Map>().where((s) => s['kind'] == 'audio').toList();
       // Highest quality the source offers for the offline copy.
-      audio.sort((a, b) => ((b['bitrate'] as num?) ?? 0).compareTo((a['bitrate'] as num?) ?? 0));
+      audio.sort((a, b) => _extractBitrate(b).compareTo(_extractBitrate(a)));
       if (audio.isNotEmpty) url = audio.first['url'] as String?;
+    }
+    if (url != null) {
+      url = ensureTopAudioQuality(url);
     }
     return DownloadEligibility(
       eligible: data['eligible'] == true && url != null,

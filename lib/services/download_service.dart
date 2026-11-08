@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../core/errors.dart';
 import '../models/track.dart';
 import 'api_service.dart';
+import 'youtube_audio.dart';
 
 enum DownloadStatus { queued, downloading, paused, verifying, completed, failed, canceled }
 
@@ -53,6 +54,13 @@ class DownloadItem {
         sha256: (m['sha256'] as String?) ?? '',
         error: (m['error'] as String?) ?? '',
       );
+}
+
+class _DownloadSource {
+  final String url;
+  final Map<String, String>? headers;
+  final String localId;
+  const _DownloadSource({required this.url, this.headers, required this.localId});
 }
 
 /// Offline downloads.
@@ -121,23 +129,67 @@ class DownloadService extends ChangeNotifier {
 
   int get completedCount => _items.values.where((i) => i.status == DownloadStatus.completed).length;
 
+  Future<_DownloadSource> _resolveDownloadSource(Track track) async {
+    // 1. If it's a YouTube track and on-device yt-dlp is available, resolve directly at top quality
+    if (YouTubeAudio.supported &&
+        (track.id.startsWith('yt:') || track.provider == 'deepsearch' || track.provider == 'youtube')) {
+      try {
+        final stream = await YouTubeAudio.resolve(track.id, topQuality: true);
+        return _DownloadSource(
+          url: stream.url,
+          headers: stream.headers,
+          localId: track.id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_'),
+        );
+      } catch (e) {
+        debugPrint('Swar: YouTube direct download resolution failed for ${track.id}: $e');
+      }
+    }
+
+    // 2. Query download eligibility from Swar server
+    DownloadEligibility? eligibility;
+    try {
+      eligibility = await api.downloadEligibility(track.id);
+    } catch (_) {}
+
+    if (eligibility != null && eligibility.eligible && eligibility.url != null) {
+      return _DownloadSource(
+        url: ApiService.ensureTopAudioQuality(eligibility.url!),
+        localId: eligibility.localId,
+      );
+    }
+
+    // 3. Fallback to on-device yt-dlp if available
+    if (YouTubeAudio.supported) {
+      try {
+        final stream = await YouTubeAudio.resolve(track.id, topQuality: true);
+        return _DownloadSource(
+          url: stream.url,
+          headers: stream.headers,
+          localId: track.id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_'),
+        );
+      } catch (_) {}
+    }
+
+    final reason = eligibility?.reason ?? 'unavailable';
+    throw ApiException(403, 'unavailable', _reasonText(reason));
+  }
+
   /// Starts (or retries) a download. Throws [ApiException] with the
   /// server's reason when the track is not eligible for offline use.
   Future<void> download(Track track) async {
     if (!supported) throw ApiException(400, 'unsupported', 'Offline downloads are not available on the web');
     final existing = _items[track.id];
     if (existing != null && (existing.status == DownloadStatus.completed || _jobs.containsKey(track.id))) return;
-    final eligibility = await api.downloadEligibility(track.id);
-    if (!eligibility.eligible) {
-      throw ApiException(403, 'unavailable', _reasonText(eligibility.reason));
-    }
+
+    final source = await _resolveDownloadSource(track);
+
     final dir = Directory('${(await getApplicationSupportDirectory()).path}/downloads');
     await dir.create(recursive: true);
     final item = existing ?? DownloadItem(track: track, status: DownloadStatus.queued);
     item
       ..status = DownloadStatus.queued
       ..error = ''
-      ..path = '${dir.path}/${eligibility.localId}.audio';
+      ..path = '${dir.path}/${source.localId}.audio';
     if (existing == null || existing.status != DownloadStatus.paused) {
       // A fresh start or a retry after failure starts from zero.
       item.bytesDone = 0;
@@ -147,24 +199,31 @@ class DownloadService extends ChangeNotifier {
     _items[track.id] = item;
     await _save(item);
     await _report(item);
-    _run(item, eligibility.url!);
+    _run(item, source.url, headers: source.headers);
   }
 
   Future<void> resume(String trackId) async {
     final item = _items[trackId];
     if (item == null || item.status != DownloadStatus.paused) return;
     // Stream URLs expire, so ask for a fresh one each time.
-    final eligibility = await api.downloadEligibility(trackId);
-    if (!eligibility.eligible) {
+    try {
+      final source = await _resolveDownloadSource(item.track);
+      _run(item, source.url, headers: source.headers);
+    } on ApiException catch (e) {
       item
         ..status = DownloadStatus.canceled
-        ..error = _reasonText(eligibility.reason);
+        ..error = e.message;
       await _save(item);
       await _report(item);
       notifyListeners();
-      return;
+    } catch (e) {
+      item
+        ..status = DownloadStatus.failed
+        ..error = friendlyError(e);
+      await _save(item);
+      await _report(item);
+      notifyListeners();
     }
-    _run(item, eligibility.url!);
   }
 
   Future<void> pause(String trackId) async {
@@ -204,17 +263,20 @@ class DownloadService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _run(DownloadItem item, String url) {
+  void _run(DownloadItem item, String url, {Map<String, String>? headers}) {
     final job = _Job();
     _jobs[item.track.id] = job;
-    unawaited(_transfer(item, url, job));
+    unawaited(_transfer(item, url, job, headers: headers));
   }
 
-  Future<void> _transfer(DownloadItem item, String url, _Job job) async {
+  Future<void> _transfer(DownloadItem item, String url, _Job job, {Map<String, String>? headers}) async {
     final file = File(item.path);
     var offset = await file.exists() ? await file.length() : 0;
     try {
       final req = http.Request('GET', Uri.parse(url));
+      if (headers != null && headers.isNotEmpty) {
+        req.headers.addAll(headers);
+      }
       if (offset > 0) req.headers['Range'] = 'bytes=$offset-';
       final res = await job.client.send(req);
       if (res.statusCode == 200 && offset > 0) {
