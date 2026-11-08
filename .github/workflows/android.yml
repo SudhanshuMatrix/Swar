@@ -16,15 +16,30 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
       - uses: ./.github/actions/setup
         with:
           platforms: android
       # The run number keeps the Android version code rising, so a new APK
       # installs over the old one. Only phone CPUs are included (emulators
       # are x86_64) and debug symbols stay out of the app, to keep it small.
-      - run: >-
-          flutter build apk --release --build-number=${{ github.run_number }}
-          --target-platform android-arm,android-arm64 --split-debug-info=build/symbols
+      - name: Build Android APK (with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt of 3: Building Android release APK..."
+            if flutter build apk --release --build-number=${{ github.run_number }} \
+              --target-platform android-arm,android-arm64 --split-debug-info=build/symbols; then
+              echo "Build succeeded on attempt $attempt."
+              exit 0
+            fi
+            echo "Attempt $attempt failed."
+            if [ "$attempt" -lt 3 ]; then
+              echo "Waiting 15 seconds before retrying..."
+              sleep 15
+            fi
+          done
+          echo "All 3 build attempts failed."
+          exit 1
       - name: APK and zip
         run: |
           mkdir -p dist
