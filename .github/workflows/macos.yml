@@ -17,7 +17,23 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           platforms: macos
-      - run: flutter build macos --release --split-debug-info=build/symbols
+      - name: Build macOS (with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt of 3: Building macOS release..."
+            if flutter build macos --release --split-debug-info=build/symbols; then
+              echo "Build succeeded on attempt $attempt."
+              exit 0
+            fi
+            echo "Attempt $attempt failed."
+            if [ "$attempt" -lt 3 ]; then
+              echo "Cleaning build directory and waiting 15 seconds before retrying..."
+              flutter clean || rm -rf build
+              sleep 15
+            fi
+          done
+          echo "All 3 build attempts failed."
+          exit 1
       - name: Make the disk image and zip
         run: |
           mkdir -p dmg dist

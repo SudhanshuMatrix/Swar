@@ -20,7 +20,23 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           platforms: linux
-      - run: flutter build linux --release --split-debug-info=build/symbols
+      - name: Build Linux (with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt of 3: Building Linux release..."
+            if flutter build linux --release --split-debug-info=build/symbols; then
+              echo "Build succeeded on attempt $attempt."
+              exit 0
+            fi
+            echo "Attempt $attempt failed."
+            if [ "$attempt" -lt 3 ]; then
+              echo "Cleaning build directory and waiting 15 seconds before retrying..."
+              flutter clean || rm -rf build
+              sleep 15
+            fi
+          done
+          echo "All 3 build attempts failed."
+          exit 1
       - name: Package .deb and .tar.gz
         run: |
           VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)

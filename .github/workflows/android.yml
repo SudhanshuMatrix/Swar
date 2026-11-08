@@ -34,7 +34,8 @@ jobs:
             fi
             echo "Attempt $attempt failed."
             if [ "$attempt" -lt 3 ]; then
-              echo "Waiting 15 seconds before retrying..."
+              echo "Cleaning build directory and waiting 15 seconds before retrying..."
+              flutter clean || rm -rf build
               sleep 15
             fi
           done
