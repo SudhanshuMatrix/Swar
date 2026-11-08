@@ -18,7 +18,22 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           platforms: windows
-      - run: flutter build windows --release --split-debug-info=build/symbols
+      - name: Build Windows (with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt of 3: Building Windows release..."
+            if flutter build windows --release --split-debug-info=build/symbols; then
+              echo "Build succeeded on attempt $attempt."
+              exit 0
+            fi
+            echo "Attempt $attempt failed."
+            if [ "$attempt" -lt 3 ]; then
+              echo "Waiting 15 seconds before retrying..."
+              sleep 15
+            fi
+          done
+          echo "All 3 build attempts failed."
+          exit 1
       - name: Make installer and zip
         run: |
           export SWAR_VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
