@@ -107,9 +107,29 @@ func maintenanceExempt(path string) bool {
 	return strings.HasPrefix(path, "/v1/admin/")
 }
 
+type directSearchStatus struct {
+	Version        int  `json:"version"`
+	SaavnMedia     bool `json:"saavnMedia"`
+	SaavnDownloads bool `json:"saavnDownloads"`
+	YouTubeMusic   bool `json:"youtubeMusic"`
+}
+
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	noStore(w)
-	ok(w, s.status.get())
+	response := struct {
+		appStatus
+		DirectSearch *directSearchStatus `json:"directSearch,omitempty"`
+	}{appStatus: s.status.get()}
+	// Keep custom catalog URLs and their credentials on the server.
+	if s.cfg.SaavnBaseURL == "https://www.jiosaavn.com/api.php" {
+		response.DirectSearch = &directSearchStatus{
+			Version:        1,
+			SaavnMedia:     s.cfg.SaavnMediaURLs,
+			SaavnDownloads: s.cfg.SaavnDownloads,
+			YouTubeMusic:   s.cfg.YTMusicSearch,
+		}
+	}
+	ok(w, response)
 }
 
 // requireAdmin checks HTTP Basic credentials against ADMIN_USERNAME and

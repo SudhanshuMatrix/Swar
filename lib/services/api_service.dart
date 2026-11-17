@@ -1,6 +1,7 @@
 import 'dart:collection';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 
@@ -9,6 +10,8 @@ import '../models/online_artist.dart';
 import '../models/online_playlist.dart';
 import '../models/track.dart';
 import '../state/app_status.dart';
+import 'catalog_search.dart';
+import 'direct_catalog.dart';
 
 class StreamResult {
   /// Empty when the server only knows the song's YouTube video.
@@ -76,6 +79,12 @@ class ApiService {
   /// One client for every request, so connections to the server are kept
   /// open and reused instead of paying a new TLS handshake each time.
   static final http.Client _http = _StatusClient(http.Client());
+  static final _directCatalog = DirectCatalog(http.Client());
+  // AppStatus reads these capabilities in its existing startup status request.
+  static final _searchOptions = <String, DirectCatalogOptions>{};
+  static const _searchLimit = 30;
+  late final _catalogSearch = CatalogSearch(_loadCatalog);
+  DateTime? _retryDirectAt;
   String? _token;
 
   // ---- Device identity ----
@@ -152,7 +161,18 @@ class ApiService {
 
   /// Maintenance mode and the active popup (see [AppStatus]).
   Future<Map<String, dynamic>> status() async {
-    return (await _public('GET', '/v1/status') as Map).cast<String, dynamic>();
+    final data = (await _public('GET', '/v1/status') as Map).cast<String, dynamic>();
+    final search = data['directSearch'];
+    if (search is Map && search['version'] == 1) {
+      _searchOptions[baseUrl] = (
+        saavnMedia: search['saavnMedia'] == true,
+        saavnDownloads: search['saavnDownloads'] == true,
+        youtubeMusic: search['youtubeMusic'] == true,
+      );
+    } else {
+      _searchOptions.remove(baseUrl);
+    }
+    return data;
   }
 
   // ---- Catalog (legacy routes, unchanged contract) ----
@@ -295,68 +315,66 @@ class ApiService {
         .toList());
   }
 
-  static final _suggestCache = LinkedHashMap<String, ({List<Track> songs, List<OnlineArtist> artists})>();
-  static final _searchAllCache =
-      LinkedHashMap<String, ({List<Track> songs, List<OnlinePlaylist> playlists, List<OnlineArtist> artists})>();
+  ({List<Track> songs, List<OnlineArtist> artists}) cachedSuggestions(String query) =>
+      _catalogSearch.suggestions(query, _searchLimit);
 
-  /// Returns cached suggestions synchronously if present.
-  ({List<Track> songs, List<OnlineArtist> artists})? cachedSuggestions(String query) {
-    return _suggestCache[query.trim().toLowerCase()];
+  CatalogResults? cachedSearchAll(String query, {int limit = _searchLimit}) =>
+      _catalogSearch.cached(query, limit);
+
+  Future<CatalogResults> searchAll(String query, {int limit = _searchLimit}) {
+    return _catalogSearch.search(query, limit);
   }
 
-  /// A few songs and singers for [query], for suggestions while typing. One
-  /// small request, which also warms the server's cache for the full search.
-  Future<({List<Track> songs, List<OnlineArtist> artists})> suggest(String query) async {
-    final key = query.trim().toLowerCase();
-    final cached = _suggestCache.remove(key);
-    if (cached != null) {
-      _suggestCache[key] = cached;
-      return cached;
+  Future<({CatalogResults results, bool partial})> _loadCatalog(
+    String query,
+    int limit,
+  ) async {
+    if (query.isEmpty || query.runes.length > 200 ||
+        query.runes.any((rune) => rune < 0x20 || rune == 0x7f) ||
+        limit < 1 || limit > 100) {
+      return _serverCatalog(query, limit);
     }
-    final q = Uri(queryParameters: {'q': query, 'type': 'all', 'limit': '5'}).query;
-    final data = await _public('GET', '/v1/search?$q') as Map<String, dynamic>;
-    List<Map<String, dynamic>> results(String key) =>
-        (((data[key] as Map<String, dynamic>?)?['results'] as List?) ?? const [])
-            .whereType<Map<String, dynamic>>()
-            .toList();
-    final res = (
-      songs: results('songs').map(Track.fromJson).where((t) => t.playable).toList(),
-      artists: results('artists').map(OnlineArtist.fromJson).toList(),
-    );
-    _suggestCache[key] = res;
-    if (_suggestCache.length > 100) _suggestCache.remove(_suggestCache.keys.first);
-    return res;
-  }
 
-  /// Returns cached search results synchronously if present.
-  ({List<Track> songs, List<OnlinePlaylist> playlists, List<OnlineArtist> artists})? cachedSearchAll(
-      String query, {int limit = 30}) {
-    return _searchAllCache['$query|$limit'.trim().toLowerCase()];
-  }
-
-  /// Unified catalog search: fetches songs, playlists, and artists in a single
-  /// request, served with client-side and server-side in-memory caching.
-  Future<({List<Track> songs, List<OnlinePlaylist> playlists, List<OnlineArtist> artists})> searchAll(
-      String query, {int limit = 30}) async {
-    final key = '$query|$limit'.trim().toLowerCase();
-    final cached = _searchAllCache.remove(key);
-    if (cached != null) {
-      _searchAllCache[key] = cached;
-      return cached;
+    final options = _searchOptions[baseUrl];
+    final retryDirectAt = _retryDirectAt;
+    if (kIsWeb || options == null || AppStatus.instance.maintenance ||
+        (retryDirectAt != null && DateTime.now().isBefore(retryDirectAt))) {
+      return _serverCatalog(query, limit);
     }
+
+    final direct = await _directCatalog.search(query, limit, options);
+    if (!direct.partial) return (results: direct.results, partial: false);
+    if (direct.failed) {
+      _retryDirectAt = DateTime.now().add(const Duration(seconds: 30));
+    }
+
+    try {
+      return await _serverCatalog(query, limit);
+    } on Exception catch (error) {
+      if (direct.failed || (error is ApiException && error.code == 'maintenance')) {
+        rethrow;
+      }
+      return (results: direct.results, partial: true);
+    }
+  }
+
+  Future<({CatalogResults results, bool partial})> _serverCatalog(
+    String query,
+    int limit,
+  ) async {
     final q = Uri(queryParameters: {'q': query, 'type': 'all', 'limit': '$limit'}).query;
     final data = await _public('GET', '/v1/search?$q') as Map<String, dynamic>;
-    List<Map<String, dynamic>> results(String key) =>
+    Iterable<Map<String, dynamic>> results(String key) =>
         (((data[key] as Map<String, dynamic>?)?['results'] as List?) ?? const [])
-            .whereType<Map<String, dynamic>>()
-            .toList();
-    final songs = results('songs').map(Track.fromJson).where((t) => t.playable).toList();
-    final artists = rankArtists(results('artists').map(OnlineArtist.fromJson).toList());
-    final playlists = results('playlists').map(OnlinePlaylist.fromJson).toList();
-    final res = (songs: songs, playlists: playlists, artists: artists);
-    _searchAllCache[key] = res;
-    if (_searchAllCache.length > 50) _searchAllCache.remove(_searchAllCache.keys.first);
-    return res;
+            .whereType<Map<String, dynamic>>();
+    return (
+      results: (
+        songs: results('songs').map(Track.fromJson).where((t) => t.playable).toList(),
+        artists: rankArtists(results('artists').map(OnlineArtist.fromJson).toList()),
+        playlists: results('playlists').map(OnlinePlaylist.fromJson).toList(),
+      ),
+      partial: data['partial'] == true,
+    );
   }
 
   /// The artist's profile with their top songs.

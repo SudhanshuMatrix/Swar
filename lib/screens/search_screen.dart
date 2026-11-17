@@ -56,9 +56,6 @@ class _SearchScreenState extends State<SearchScreen> {
     return q.isNotEmpty && q != _searchedFor;
   }
 
-  /// Recent results, so going back to a search is instant.
-  static final _cache = <String, ({List<Track> songs, List<OnlinePlaylist> playlists, List<OnlineArtist> artists})>{};
-
   @override
   void initState() {
     super.initState();
@@ -85,6 +82,7 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _search(String query) async {
     final trimmed = query.trim();
     _debounce?.cancel();
+    ++_suggestId;
     final id = ++_searchId;
     if (trimmed.isEmpty) {
       setState(() {
@@ -92,17 +90,18 @@ class _SearchScreenState extends State<SearchScreen> {
         _playlists = [];
         _artists = [];
         _searchedFor = '';
+        _searched = false;
+        _loading = false;
+        _error = null;
       });
       return;
     }
     context.read<LibraryProvider>().addSearch(trimmed);
-    final key = trimmed.toLowerCase();
     final api = context.read<ApiService>();
     final player = context.read<PlayerProvider>();
 
-    final cached = _cache.remove(key) ?? api.cachedSearchAll(trimmed);
+    final cached = api.cachedSearchAll(trimmed);
     if (cached != null) {
-      _cache[key] = cached;
       setState(() {
         _results = cached.songs;
         _playlists = cached.playlists;
@@ -135,9 +134,6 @@ class _SearchScreenState extends State<SearchScreen> {
         _searched = true;
         _loading = false;
       });
-      _cache[key] = res;
-      if (_cache.length > 50) _cache.remove(_cache.keys.first);
-
       for (final t in res.songs.take(2)) {
         player.prewarmTrack(t);
       }
@@ -152,45 +148,43 @@ class _SearchScreenState extends State<SearchScreen> {
 
   void _onTextChanged(String text) {
     _debounce?.cancel();
+    final id = ++_suggestId;
     final q = text.trim();
-    if (q.length >= 2) {
-      final cached = context.read<ApiService>().cachedSuggestions(q);
-      if (cached != null) {
-        setState(() {
-          _suggestSongs = cached.songs;
-          _suggestArtists = cached.artists;
-        });
+    final api = context.read<ApiService>();
+    final local = api.cachedSuggestions(q);
+    if (q != _searchedFor) ++_searchId;
+    setState(() {
+      if (q != _searchedFor) {
+        if (_loading) _searchedFor = '';
+        _loading = false;
+        _error = null;
       }
-      // Quick debounce for responsive autocomplete typing
-      _debounce = Timer(const Duration(milliseconds: 160), () => _loadSuggestions(q));
-    }
-    if (text.isEmpty && (_results.isNotEmpty || _hasExtras)) {
-      setState(() {
+      _suggestSongs = local.songs;
+      _suggestArtists = local.artists;
+      if (q.isEmpty) {
         _results = [];
         _playlists = [];
         _artists = [];
         _searchedFor = '';
-      });
-    } else {
-      // Keeps the clear button and suggestions in step with the text.
-      setState(() {});
+        _searched = false;
+      }
+    });
+    if (q.runes.length < 2 || q == _searchedFor || api.cachedSearchAll(q) != null) {
+      return;
     }
+    _debounce = Timer(const Duration(milliseconds: 160), () => _loadSuggestions(q, id));
   }
 
-  Future<void> _loadSuggestions(String q) async {
-    final id = ++_suggestId;
+  Future<void> _loadSuggestions(String q, int id) async {
     try {
-      final s = await context.read<ApiService>().suggest(q);
+      final results = await context.read<ApiService>().searchAll(q);
       if (!mounted || id != _suggestId) return;
       setState(() {
-        _suggestSongs = s.songs;
-        _suggestArtists = s.artists;
+        _suggestSongs = results.songs;
+        _suggestArtists = results.artists;
       });
-      if (s.songs.isNotEmpty && mounted) {
-        context.read<PlayerProvider>().prewarmTrack(s.songs.first);
-      }
     } catch (_) {
-      // Suggestions are optional; the full search still works.
+      // The user can still explicitly submit or retry the search.
     }
   }
 
@@ -288,15 +282,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           icon: const Icon(PhosphorIconsRegular.x),
                           onPressed: () {
                             _controller.clear();
-                            _debounce?.cancel();
-                            setState(() {
-                              _searchedFor = '';
-                              _results = [];
-                              _playlists = [];
-                              _artists = [];
-                              _searched = false;
-                              _error = null;
-                            });
+                            _onTextChanged('');
                           },
                         )
                       : null,

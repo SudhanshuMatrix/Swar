@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"swar/internal/config"
 )
 
 var adminVars = map[string]string{"ADMIN_USERNAME": "boss", "ADMIN_PASSWORD": "correct horse"}
@@ -224,5 +227,42 @@ func TestAdminClearCacheDisabledWithoutCredentials(t *testing.T) {
 	code, body, _ := e.admin(t, "DELETE", "/v1/admin/cache", "boss", "correct horse", nil)
 	if code != http.StatusNotFound || errCode(body) != "admin_disabled" {
 		t.Fatalf("got %d %v", code, body)
+	}
+}
+
+func TestStatusAdvertisesDirectSearchOnlyForDefaultCatalog(t *testing.T) {
+	s := &Server{cfg: &config.Config{SaavnMediaURLs: true, SaavnDownloads: true}}
+	for _, tc := range []struct {
+		name, url string
+		want      bool
+	}{
+		{"default", "https://www.jiosaavn.com/api.php", true},
+		{"custom", "https://catalog.example/api.php?key=secret", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s.cfg.SaavnBaseURL = tc.url
+			rec := httptest.NewRecorder()
+			s.handleStatus(rec, httptest.NewRequest(http.MethodGet, "/v1/status", nil))
+
+			var response struct {
+				Data struct {
+					Maintenance  *maintenance
+					DirectSearch *directSearchStatus
+				}
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Data.Maintenance == nil {
+				t.Fatal("status must still report maintenance")
+			}
+			got := response.Data.DirectSearch
+			if (got != nil) != tc.want {
+				t.Fatalf("direct search capability = %+v, want present = %t", got, tc.want)
+			}
+			if got != nil && (got.Version != 1 || !got.SaavnMedia || !got.SaavnDownloads || got.YouTubeMusic) {
+				t.Fatalf("unexpected direct search capability: %+v", got)
+			}
+		})
 	}
 }
