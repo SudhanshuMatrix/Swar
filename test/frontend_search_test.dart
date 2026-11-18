@@ -4,10 +4,11 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-
-import '../lib/models/track.dart';
-import '../lib/services/catalog_search.dart';
-import '../lib/services/direct_catalog.dart';
+import 'package:sonivo/models/online_artist.dart';
+import 'package:sonivo/models/online_playlist.dart';
+import 'package:sonivo/models/track.dart';
+import 'package:sonivo/services/catalog_search.dart';
+import 'package:sonivo/services/direct_catalog.dart';
 
 void main() {
   test('typeahead and submit coalesce and reuse the same result', () async {
@@ -30,7 +31,11 @@ void main() {
       duration: Duration(seconds: 190),
     );
     response.complete((
-      results: (songs: [track], artists: [], playlists: []),
+      results: (
+        songs: [track],
+        artists: <OnlineArtist>[],
+        playlists: <OnlinePlaylist>[],
+      ),
       partial: false,
     ));
     expect((await typeahead).songs, [track]);
@@ -94,7 +99,9 @@ void main() {
           },
         };
       }
-      return http.Response(jsonEncode(response), 200);
+      return http.Response(jsonEncode(response), 200, headers: {
+        'content-type': 'application/json; charset=utf-8',
+      });
     });
     addTearDown(client.close);
     final direct = DirectCatalog(client);

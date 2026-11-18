@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:io' show SocketException, TlsException;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:hive_flutter/hive_flutter.dart';
@@ -72,16 +74,32 @@ class DownloadEligibility {
 /// Talks to the Swar Go backend (/server).
 class ApiService {
   final String baseUrl;
-  ApiService({String? baseUrl}) : baseUrl = baseUrl ?? ApiConfig.baseUrl;
+  ApiService({String? baseUrl, http.Client? client})
+      : baseUrl = baseUrl ?? ApiConfig.baseUrl,
+        _http = client == null ? _sharedHttp : _StatusClient(client),
+        _directCatalog = client == null ? _sharedCatalog : DirectCatalog(client),
+        _searchOptions = client == null ? _sharedSearchOptions : {};
 
   static const _deviceBox = 'swar_device';
 
   /// One client for every request, so connections to the server are kept
   /// open and reused instead of paying a new TLS handshake each time.
-  static final http.Client _http = _StatusClient(http.Client());
-  static final _directCatalog = DirectCatalog(http.Client());
-  // AppStatus reads these capabilities in its existing startup status request.
-  static final _searchOptions = <String, DirectCatalogOptions>{};
+  static final http.Client _sharedHttp = _StatusClient(http.Client());
+  static final _sharedCatalog = DirectCatalog(http.Client());
+  // Shared with AppStatus's startup request. A null entry means the server
+  // answered but didn't advertise direct search (e.g. a custom catalog).
+  static final _sharedSearchOptions = <String, DirectCatalogOptions?>{};
+  final http.Client _http;
+  final DirectCatalog _directCatalog;
+  final Map<String, DirectCatalogOptions?> _searchOptions;
+  static const _hostedRecovery = (
+    saavnMedia: true,
+    saavnDownloads: false,
+    youtubeMusic: true,
+  );
+  static const _catalogRecoveryTimeout = Duration(seconds: 8);
+  // Allow a cold start if the hosted server is the only source of results.
+  static const _hostedCatalogTimeout = Duration(minutes: 1);
   static const _searchLimit = 30;
   late final _catalogSearch = CatalogSearch(_loadCatalog);
   DateTime? _retryDirectAt;
@@ -132,13 +150,21 @@ class ApiService {
     }
   }
 
-  Future<dynamic> _public(String method, String path, {Object? body}) async {
-    final req = http.Request(method, Uri.parse('$baseUrl$path'));
+  Future<dynamic> _public(String method, String path,
+      {Object? body, Duration? timeout}) async {
+    final abort = timeout == null ? null : Completer<void>();
+    final req = http.AbortableRequest(method, Uri.parse('$baseUrl$path'),
+        abortTrigger: abort?.future);
     if (body != null) {
       req.headers['Content-Type'] = 'application/json';
       req.body = jsonEncode(body);
     }
-    return _data(await http.Response.fromStream(await _http.send(req)));
+    final response = _http.send(req).then(http.Response.fromStream);
+    if (timeout == null) return _data(await response);
+    return _data(await response.timeout(timeout, onTimeout: () {
+      abort!.complete();
+      throw TimeoutException('Swar request timed out', timeout);
+    }));
   }
 
   /// Unwraps the {success, data} envelope or throws [ApiException].
@@ -170,7 +196,7 @@ class ApiService {
         youtubeMusic: search['youtubeMusic'] == true,
       );
     } else {
-      _searchOptions.remove(baseUrl);
+      _searchOptions[baseUrl] = null;
     }
     return data;
   }
@@ -335,35 +361,99 @@ class ApiService {
       return _serverCatalog(query, limit);
     }
 
-    final options = _searchOptions[baseUrl];
-    final retryDirectAt = _retryDirectAt;
-    if (kIsWeb || options == null || AppStatus.instance.maintenance ||
-        (retryDirectAt != null && DateTime.now().isBefore(retryDirectAt))) {
-      return _serverCatalog(query, limit);
-    }
+    final options = _canSearchDirect ? _searchOptions[baseUrl] : null;
+    if (options == null) return _serverFirstCatalog(query, limit);
 
-    final direct = await _directCatalog.search(query, limit, options);
+    final direct = await _searchDirect(query, limit, options);
     if (!direct.partial) return (results: direct.results, partial: false);
-    if (direct.failed) {
-      _retryDirectAt = DateTime.now().add(const Duration(seconds: 30));
-    }
 
+    final hasResults = _hasCatalogResults(direct.results);
     try {
-      return await _serverCatalog(query, limit);
+      return await _serverCatalog(query, limit,
+          timeout: hasResults ? _catalogRecoveryTimeout : null);
     } on Exception catch (error) {
-      if (direct.failed || (error is ApiException && error.code == 'maintenance')) {
+      if (!hasResults ||
+          AppStatus.instance.maintenance ||
+          !_catalogUnavailable(error)) {
         rethrow;
       }
       return (results: direct.results, partial: true);
     }
   }
 
-  Future<({CatalogResults results, bool partial})> _serverCatalog(
+  Future<({CatalogResults results, bool partial})> _serverFirstCatalog(
     String query,
     int limit,
   ) async {
+    // Search can start before the startup status request has succeeded.
+    final timeout = _recoveryOptions == null ? null : _catalogRecoveryTimeout;
+    try {
+      return await _serverCatalog(query, limit, timeout: timeout);
+    } on Exception catch (error) {
+      // Status may have arrived while the search request was pending.
+      final options = _recoveryOptions;
+      if (options == null || !_catalogUnavailable(error)) rethrow;
+      final direct = await _searchDirect(query, limit, options);
+      if (AppStatus.instance.maintenance ||
+          (direct.partial && !_hasCatalogResults(direct.results))) {
+        rethrow;
+      }
+      // Cache briefly so future searches can retry Swar.
+      return (results: direct.results, partial: true);
+    }
+  }
+
+  static bool _hasCatalogResults(CatalogResults results) =>
+      results.songs.isNotEmpty ||
+      results.artists.isNotEmpty ||
+      results.playlists.isNotEmpty;
+
+  bool get _canSearchDirect {
+    final retryAt = _retryDirectAt;
+    return !kIsWeb &&
+        !AppStatus.instance.maintenance &&
+        (retryAt == null || !DateTime.now().isBefore(retryAt));
+  }
+
+  DirectCatalogOptions? get _recoveryOptions {
+    if (!_canSearchDirect) return null;
+    if (_searchOptions.containsKey(baseUrl)) return _searchOptions[baseUrl];
+    return baseUrl == ApiConfig.hostedBaseUrl ? _hostedRecovery : null;
+  }
+
+  static bool _catalogUnavailable(Exception error) =>
+      error is http.ClientException ||
+      error is SocketException ||
+      error is TlsException ||
+      error is TimeoutException ||
+      (error is ApiException &&
+          error.status >= 500 &&
+          error.status < 600 &&
+          error.code != 'maintenance' &&
+          error.code != 'rate_limited');
+
+  Future<({CatalogResults results, bool partial, bool failed})> _searchDirect(
+    String query,
+    int limit,
+    DirectCatalogOptions options,
+  ) async {
+    final direct = await _directCatalog.search(query, limit, options);
+    if (direct.failed) {
+      _retryDirectAt = DateTime.now().add(const Duration(seconds: 30));
+    }
+    return direct;
+  }
+
+  Future<({CatalogResults results, bool partial})> _serverCatalog(
+    String query,
+    int limit, {
+    Duration? timeout,
+  }) async {
     final q = Uri(queryParameters: {'q': query, 'type': 'all', 'limit': '$limit'}).query;
-    final data = await _public('GET', '/v1/search?$q') as Map<String, dynamic>;
+    final data = await _public('GET', '/v1/search?$q',
+        timeout: timeout ??
+            (baseUrl == ApiConfig.hostedBaseUrl ? _hostedCatalogTimeout : null))
+        as Map<String, dynamic>;
     Iterable<Map<String, dynamic>> results(String key) =>
         (((data[key] as Map<String, dynamic>?)?['results'] as List?) ?? const [])
             .whereType<Map<String, dynamic>>();

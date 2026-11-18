@@ -9,6 +9,7 @@ import 'package:flutter/services.dart' show rootBundle;
 /// wins when given. For a local server use http://10.0.2.2:8765 (Android
 /// emulator) or your computer's LAN IP (physical phone).
 class ApiConfig {
+  static const hostedBaseUrl = 'https://swar-urov.onrender.com';
   static const _fromDefine = String.fromEnvironment('API_BASE_URL');
   static const _fallback = 'http://127.0.0.1:8765';
 

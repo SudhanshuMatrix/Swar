@@ -12,6 +12,10 @@ release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- Search can still find songs on Android and desktop when the hosted Swar server is temporarily unreachable.
+
 ## [1.2.10] - 2026-11-08
 
 ### Fixed
